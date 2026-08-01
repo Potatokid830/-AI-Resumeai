@@ -8,12 +8,9 @@ export type BlobUploadProgress = {
   percentage: number;
 };
 
-function sanitizeFileName(name: string) {
-  return name.replace(/[^\w.\-()\u4e00-\u9fff]+/g, "_").slice(0, 120);
-}
-
 /**
- * 浏览器直传 Vercel Blob（先向 /api/upload 换 Token，再分片直传到云端）
+ * 浏览器直传 Vercel Blob
+ * pathname 使用原始 file.name，避免自定义前缀导致 Token/pathname 校验冲突
  */
 export async function uploadFileToBlob(
   file: File,
@@ -22,15 +19,16 @@ export async function uploadFileToBlob(
     onProgress?: (progress: BlobUploadProgress) => void;
   },
 ) {
-  const folder = options?.folder ?? "workspace";
-  const pathname = `${folder}/${Date.now()}-${sanitizeFileName(file.name)}`;
+  // 暂时忽略 folder 前缀，直接使用原始文件名（保留扩展名供 Blob 推断 contentType）
+  void options?.folder;
+  const pathname = file.name;
 
   try {
     const blob = await upload(pathname, file, {
       access: "public",
       handleUploadUrl: "/api/upload",
-      // 显式开启分片直传，支持大 PDF / 视频作品集
       multipart: true,
+      contentType: file.type || "application/octet-stream",
       onUploadProgress: (event) => {
         options?.onProgress?.({
           loaded: event.loaded,
@@ -41,14 +39,14 @@ export async function uploadFileToBlob(
     });
     return blob;
   } catch (error) {
-    const detail = await diagnoseTokenError();
+    const detail = await diagnoseUploadError();
     const base =
       error instanceof Error ? error.message : "上传失败，请稍后重试";
     throw new Error(detail ? `${base}（${detail}）` : base);
   }
 }
 
-async function diagnoseTokenError(): Promise<string | null> {
+async function diagnoseUploadError(): Promise<string | null> {
   try {
     const res = await fetch("/api/upload", {
       method: "POST",
@@ -56,7 +54,7 @@ async function diagnoseTokenError(): Promise<string | null> {
       body: JSON.stringify({
         type: "blob.generate-client-token",
         payload: {
-          pathname: "diagnose/ping.bin",
+          pathname: "diagnose.pdf",
           clientPayload: null,
           multipart: true,
         },

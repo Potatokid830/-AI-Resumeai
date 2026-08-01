@@ -3,10 +3,6 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-/**
- * Vercel Blob Client Upload — Token 签发
- * 不限制 MIME；仅限制最大 100MB
- */
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
 
@@ -15,12 +11,10 @@ export async function POST(request: Request): Promise<NextResponse> {
       body,
       request,
       onBeforeGenerateToken: async () => {
+        // 不写 allowedContentTypes = 允许任意格式
         return {
           maximumSizeInBytes: 100 * 1024 * 1024,
         };
-      },
-      onUploadCompleted: async ({ blob }) => {
-        console.log("blob upload completed", blob.url);
       },
     });
 
