@@ -9,6 +9,9 @@ export type ResumeItemStatus = "revised" | "unchanged" | "weak";
 
 export type ResumeRelevance = "high" | "medium" | "low";
 
+/** 经历来源：由 API 链写死，不由模型判断 */
+export type ResumeItemSource = "resume" | "portfolio";
+
 export type ResumeSectionItem = {
   id: string;
   original: string;
@@ -18,6 +21,9 @@ export type ResumeSectionItem = {
   changeReason: string;
   relevanceToJd: ResumeRelevance;
   deepDivePrompts: string[];
+  source: ResumeItemSource;
+  /** 仅 portfolio：如「基于作品集《xxx》提炼」 */
+  sourceLabel?: string;
 };
 
 export type ResumeSection = {

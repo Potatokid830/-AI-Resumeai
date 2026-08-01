@@ -36,7 +36,52 @@ function isItemLocked(
   return itemIndex >= half;
 }
 
+function RevisedBody({ item }: { item: ResumeSectionItem }) {
+  return (
+    <>
+      <p className="mt-1.5 text-[14px] leading-[1.55] text-zinc-800">
+        {item.revisedHtml ? (
+          <MarkHtml html={item.revisedHtml} variant="light" />
+        ) : (
+          <span className="whitespace-pre-wrap">
+            {item.revised || "（无改写）"}
+          </span>
+        )}
+      </p>
+      {item.changeReason ? (
+        <p className="mt-2 text-[12px] leading-relaxed text-zinc-500">
+          {item.changeReason}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+function PortfolioItemBlock({ item }: { item: ResumeSectionItem }) {
+  const label =
+    item.sourceLabel?.trim() ||
+    item.original?.trim() ||
+    "基于上传作品集提炼";
+  return (
+    <div className="space-y-3 rounded-xl border border-amber-200/50 bg-amber-50/40 p-4">
+      <p className="text-[12.5px] font-medium tracking-tight text-amber-950/80">
+        📎 {label}
+      </p>
+      <div>
+        <p className="text-[11px] font-medium tracking-[0.12em] text-zinc-500 uppercase">
+          提炼经历
+        </p>
+        <RevisedBody item={item} />
+      </div>
+    </div>
+  );
+}
+
 function ResumeItemBlock({ item }: { item: ResumeSectionItem }) {
+  if (item.source === "portfolio") {
+    return <PortfolioItemBlock item={item} />;
+  }
+
   return (
     <div className="space-y-3 rounded-xl border border-zinc-200/80 bg-white/60 p-4">
       <div>
@@ -52,20 +97,7 @@ function ResumeItemBlock({ item }: { item: ResumeSectionItem }) {
         <p className="text-[11px] font-medium tracking-[0.12em] text-zinc-500 uppercase">
           改写
         </p>
-        <p className="mt-1.5 text-[14px] leading-[1.55] text-zinc-800">
-          {item.revisedHtml ? (
-            <MarkHtml html={item.revisedHtml} variant="light" />
-          ) : (
-            <span className="whitespace-pre-wrap">
-              {item.revised || "（无改写）"}
-            </span>
-          )}
-        </p>
-        {item.changeReason ? (
-          <p className="mt-2 text-[12px] leading-relaxed text-zinc-500">
-            {item.changeReason}
-          </p>
-        ) : null}
+        <RevisedBody item={item} />
       </div>
     </div>
   );

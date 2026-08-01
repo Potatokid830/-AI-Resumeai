@@ -13,7 +13,14 @@ export function buildResumePlainText(result: GenerateApiResponse) {
   for (const section of sections) {
     lines.push(section.title);
     for (const item of section.items) {
-      const text = (item.revised || item.original || "").trim();
+      if (item.source === "portfolio") {
+        const label =
+          item.sourceLabel?.trim() ||
+          item.original?.trim() ||
+          "基于上传作品集提炼";
+        lines.push(label);
+      }
+      const text = (item.revised || "").trim();
       if (text) lines.push(text, "");
     }
     lines.push("");

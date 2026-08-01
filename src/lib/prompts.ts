@@ -117,6 +117,8 @@ const PORTFOLIO_STAR_TAIL = `
 
 把这些【客观观察】转成可放进简历的真实经历(sections/items 结构)。特别注意:视觉观察里"待确认"的部分,是你不知道的信息,不要替用户填补——把它们变成 gapAnalysis 里的追问。作品能看出"做了什么",但"这是不是真实商业项目、有没有实际效果"往往看不出,这些必须问用户,不能假设。
 
+重要:本链路的 original 字段由服务端代码填写来源标签,你不要填、更不要把作品集全文塞进 original。你只需产出 revised / revisedHtml 等改写字段;original 可写空字符串 ""。
+
 # 强制输出格式(只返回合法 JSON)
 按 sections/items 输出;字段可先填得粗糙,但结构必须完整:
 {
@@ -132,7 +134,7 @@ const PORTFOLIO_STAR_TAIL = `
       "items": [
         {
           "id": string,
-          "original": string,
+          "original": "",
           "revised": string,
           "revisedHtml": string,
           "status": "revised"|"unchanged"|"weak",

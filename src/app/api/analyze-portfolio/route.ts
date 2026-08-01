@@ -4,6 +4,7 @@ import type { GenerateApiResponse } from "@/lib/generateTypes";
 import { extractMediaInsights } from "@/lib/extractMediaInsights";
 import { PORTFOLIO_STAR_SYSTEM } from "@/lib/prompts";
 import {
+  buildPortfolioSourceLabel,
   isValidFinalSections,
   normalizeGenerateResponse,
 } from "@/lib/resumeSchema";
@@ -41,9 +42,14 @@ function isValidResult(data: unknown): data is GenerateApiResponse {
   return isValidFinalSections(data);
 }
 
-function normalizeResult(data: GenerateApiResponse): GenerateApiResponse {
+function normalizeResult(
+  data: GenerateApiResponse,
+  fileName: string,
+): GenerateApiResponse {
   return normalizeGenerateResponse(data, "result", {
     matchSubtitle: "作品集视觉解析完成 · 解锁查看完整 STAR",
+    itemSource: "portfolio",
+    portfolioLabel: buildPortfolioSourceLabel(fileName),
   });
 }
 
@@ -143,7 +149,7 @@ ${mediaInsight}
       );
     }
 
-    return NextResponse.json(normalizeResult(parsed));
+    return NextResponse.json(normalizeResult(parsed as GenerateApiResponse, primary.name));
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
     return NextResponse.json(

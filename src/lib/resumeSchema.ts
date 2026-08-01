@@ -1,6 +1,7 @@
 import type {
   GenerateApiResponse,
   GeneratePhase,
+  ResumeItemSource,
   ResumeItemStatus,
   ResumeRelevance,
   ResumeSection,
@@ -19,6 +20,14 @@ const SECTION_TYPES: ResumeSectionType[] = [
 const ITEM_STATUSES: ResumeItemStatus[] = ["revised", "unchanged", "weak"];
 
 const RELEVANCE: ResumeRelevance[] = ["high", "medium", "low"];
+
+export type NormalizeGenerateOptions = {
+  matchSubtitle?: string;
+  /** 由调用链写死；默认 resume */
+  itemSource?: ResumeItemSource;
+  /** portfolio 时由代码生成的来源标签，会覆盖 original / sourceLabel */
+  portfolioLabel?: string;
+};
 
 function asString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -45,14 +54,49 @@ function normalizeRelevance(value: unknown): ResumeRelevance {
   return "medium";
 }
 
-function normalizeItem(raw: unknown, index: number): ResumeSectionItem | null {
+function stampItemSource(
+  item: ResumeSectionItem,
+  itemSource: ResumeItemSource,
+  portfolioLabel?: string,
+): ResumeSectionItem {
+  if (itemSource === "portfolio") {
+    const label = (
+      portfolioLabel ||
+      item.sourceLabel ||
+      "基于上传作品集提炼"
+    ).trim();
+    return {
+      ...item,
+      source: "portfolio",
+      sourceLabel: label,
+      original: label,
+    };
+  }
+
+  const { sourceLabel: _drop, ...rest } = item;
+  return {
+    ...rest,
+    source: "resume",
+  };
+}
+
+function normalizeItem(
+  raw: unknown,
+  index: number,
+  itemSource: ResumeItemSource,
+): ResumeSectionItem | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
   const id = asString(row.id, `item_${index + 1}`);
   const original = asString(row.original);
   const revised = asString(row.revised);
-  // 至少要有一段可读正文
-  if (!original && !revised) return null;
+
+  // portfolio：允许缺 original（稍后由代码盖章）；resume：至少要有原文或改写
+  if (itemSource === "portfolio") {
+    if (!revised.trim()) return null;
+  } else if (!original && !revised) {
+    return null;
+  }
 
   const status = normalizeItemStatus(row.status);
   const relevanceToJd = normalizeRelevance(row.relevanceToJd);
@@ -70,7 +114,7 @@ function normalizeItem(raw: unknown, index: number): ResumeSectionItem | null {
     asString(row.revisedHtml) ||
     (revised ? revised.replace(/</g, "&lt;").replace(/>/g, "&gt;") : "");
 
-  return {
+  const base: ResumeSectionItem = {
     id,
     original,
     revised: revised || original,
@@ -79,17 +123,26 @@ function normalizeItem(raw: unknown, index: number): ResumeSectionItem | null {
     changeReason: asString(row.changeReason),
     relevanceToJd,
     deepDivePrompts,
+    source: itemSource,
   };
+
+  return base;
 }
 
-function normalizeSection(raw: unknown, index: number): ResumeSection | null {
+function normalizeSection(
+  raw: unknown,
+  index: number,
+  itemSource: ResumeItemSource,
+  portfolioLabel?: string,
+): ResumeSection | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
   if (!Array.isArray(row.items)) return null;
 
   const items = row.items
-    .map((item, itemIndex) => normalizeItem(item, itemIndex))
-    .filter((item): item is ResumeSectionItem => Boolean(item));
+    .map((item, itemIndex) => normalizeItem(item, itemIndex, itemSource))
+    .filter((item): item is ResumeSectionItem => Boolean(item))
+    .map((item) => stampItemSource(item, itemSource, portfolioLabel));
 
   if (!items.length) return null;
 
@@ -113,27 +166,45 @@ export function isValidFinalSections(data: unknown): boolean {
   return value.sections.some((section) => {
     if (!section || typeof section !== "object") return false;
     const row = section as Record<string, unknown>;
-    return Array.isArray(row.items) && row.items.length > 0;
+    if (!Array.isArray(row.items) || row.items.length === 0) return false;
+    // 至少有一条带 revised，或带 original（resume）
+    return row.items.some((item) => {
+      if (!item || typeof item !== "object") return false;
+      const it = item as Record<string, unknown>;
+      return (
+        (typeof it.revised === "string" && it.revised.trim().length > 0) ||
+        (typeof it.original === "string" && it.original.trim().length > 0)
+      );
+    });
   });
 }
 
-export function normalizeSections(raw: unknown): ResumeSection[] {
+export function normalizeSections(
+  raw: unknown,
+  itemSource: ResumeItemSource = "resume",
+  portfolioLabel?: string,
+): ResumeSection[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .map((section, index) => normalizeSection(section, index))
+    .map((section, index) =>
+      normalizeSection(section, index, itemSource, portfolioLabel),
+    )
     .filter((section): section is ResumeSection => Boolean(section));
 }
 
 export function normalizeGenerateResponse(
   data: Record<string, unknown> | GenerateApiResponse,
   phase: GeneratePhase,
-  defaults?: { matchSubtitle?: string },
+  defaults?: NormalizeGenerateOptions,
 ): GenerateApiResponse {
   const matchScoreRaw =
     typeof data.matchScore === "number" ? data.matchScore : 0;
 
+  const itemSource = defaults?.itemSource ?? "resume";
   const sections =
-    phase === "result" ? normalizeSections(data.sections) : null;
+    phase === "result"
+      ? normalizeSections(data.sections, itemSource, defaults?.portfolioLabel)
+      : null;
 
   return {
     phase,
@@ -154,4 +225,10 @@ export function normalizeGenerateResponse(
           .slice(0, 3)
       : [],
   };
+}
+
+/** 由文件名生成作品集来源标签（不编造页数） */
+export function buildPortfolioSourceLabel(fileName: string): string {
+  const base = fileName.replace(/\.[^.]+$/, "").trim() || fileName.trim() || "未命名作品集";
+  return `基于作品集《${base}》提炼`;
 }

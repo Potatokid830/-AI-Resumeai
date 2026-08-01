@@ -131,7 +131,7 @@ function normalizeResponse(
   data: GenerateApiResponse,
   phase: GeneratePhase,
 ): GenerateApiResponse {
-  return normalizeGenerateResponse(data, phase);
+  return normalizeGenerateResponse(data, phase, { itemSource: "resume" });
 }
 
 type AssetUrlRef = {
