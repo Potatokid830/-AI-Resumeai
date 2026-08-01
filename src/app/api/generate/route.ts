@@ -5,7 +5,10 @@ import type {
   GenerateApiResponse,
   GeneratePhase,
 } from "@/lib/generateTypes";
-import { parseResumeFile } from "@/lib/parseResumeFile";
+import {
+  isTextExtractable,
+  parseDocumentFromUrl,
+} from "@/lib/parseDocument";
 
 export const runtime = "nodejs";
 
@@ -225,35 +228,95 @@ function normalizeResponse(
   };
 }
 
+type AssetUrlRef = {
+  name?: string;
+  url?: string;
+  size?: number;
+};
+
+type GenerateRequestBody = {
+  jdText?: string;
+  experienceText?: string;
+  resumeText?: string;
+  resumeUrl?: string | null;
+  resumeFileName?: string | null;
+  assetUrls?: AssetUrlRef[];
+  isFinal?: boolean;
+  clarifyingAnswers?: ClarifyingAnswer[] | string;
+};
+
+async function enrichExperienceFromAssets(
+  experienceText: string,
+  assetUrls: AssetUrlRef[],
+) {
+  if (!assetUrls.length) return experienceText;
+
+  const extractedBlocks: string[] = [];
+
+  for (const asset of assetUrls.slice(0, 6)) {
+    const url = typeof asset.url === "string" ? asset.url : "";
+    const name = typeof asset.name === "string" ? asset.name : "asset";
+    if (!url || !isTextExtractable(name)) continue;
+
+    const parsed = await parseDocumentFromUrl(url, name);
+    if (parsed.ok && parsed.text) {
+      extractedBlocks.push(
+        `【云端素材提取：${name}】\n${parsed.text.slice(0, 12_000)}`,
+      );
+    }
+  }
+
+  if (!extractedBlocks.length) return experienceText;
+  return [experienceText, ...extractedBlocks].filter(Boolean).join("\n\n");
+}
+
 export async function POST(request: Request) {
-  let formData: FormData;
+  let body: GenerateRequestBody;
 
   try {
-    formData = await request.formData();
+    body = (await request.json()) as GenerateRequestBody;
   } catch {
     return NextResponse.json(
-      { error: "请求体无效，请以 FormData 提交" },
+      { error: "请求体无效，请以 JSON 提交（含 Blob URL）" },
       { status: 400 },
     );
   }
 
-  const jdText = String(formData.get("jdText") ?? "");
-  const experienceText = String(formData.get("experienceText") ?? "");
-  const resumeTextField = String(formData.get("resumeText") ?? "");
-  const isFinal = String(formData.get("isFinal") ?? "") === "true";
-  const clarifyingAnswers = parseClarifyingAnswers(
-    String(formData.get("clarifyingAnswers") ?? ""),
-  );
-  const resumeField = formData.get("resumeFile");
+  const jdText = String(body.jdText ?? "");
+  let experienceText = String(body.experienceText ?? "");
+  let resumeText = String(body.resumeText ?? "");
+  const resumeUrl =
+    typeof body.resumeUrl === "string" && body.resumeUrl.trim()
+      ? body.resumeUrl.trim()
+      : "";
+  const resumeFileName =
+    typeof body.resumeFileName === "string" ? body.resumeFileName : "resume.pdf";
+  const isFinal = Boolean(body.isFinal);
+  const clarifyingAnswers = Array.isArray(body.clarifyingAnswers)
+    ? body.clarifyingAnswers
+    : parseClarifyingAnswers(
+        typeof body.clarifyingAnswers === "string"
+          ? body.clarifyingAnswers
+          : "",
+      );
+  const assetUrls = Array.isArray(body.assetUrls) ? body.assetUrls : [];
 
-  let resumeText = resumeTextField;
-
-  if (!resumeText && resumeField instanceof File && resumeField.size > 0) {
-    const parsed = await parseResumeFile(resumeField);
+  // 从 Blob URL 拉取简历并解析纯文本
+  if (resumeUrl) {
+    const parsed = await parseDocumentFromUrl(resumeUrl, resumeFileName);
     if (!parsed.ok) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
     resumeText = parsed.text;
+  }
+
+  try {
+    experienceText = await enrichExperienceFromAssets(
+      experienceText,
+      assetUrls,
+    );
+  } catch {
+    // 素材提取失败不阻断主流程，仍用前端附带的 url 文本
   }
 
   const openai = getDeepSeekClient();

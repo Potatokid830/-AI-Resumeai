@@ -25,8 +25,10 @@ const CODE_PURCHASE_URL = "https://m.tb.cn/resumeai-pro";
 type SessionPayload = {
   jdText: string;
   experienceText: string;
-  resumeFile: File | null;
-  resumeText: string;
+  resumeUrl: string | null;
+  resumeFileName: string | null;
+  assetUrls: GeneratePayload["assetUrls"];
+  userNotes: string;
   questions: string[];
 };
 
@@ -65,6 +67,10 @@ export default function WorkspaceShell() {
     "default",
   );
   const [loadingHint, setLoadingHint] = useState("AI 正在对齐 JD 关键词...");
+  const [loadingVariant, setLoadingVariant] = useState<"default" | "portfolio">(
+    "default",
+  );
+  const [isAnalyzingPortfolio, setIsAnalyzingPortfolio] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionRef = useRef<SessionPayload | null>(null);
   const exportHandlerRef = useRef<(() => Promise<void>) | null>(null);
@@ -114,7 +120,6 @@ export default function WorkspaceShell() {
       payload: GeneratePayload;
       isFinal: boolean;
       clarifyingAnswers?: ClarifyingAnswer[];
-      resumeText?: string;
     }) => {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(
@@ -123,32 +128,20 @@ export default function WorkspaceShell() {
       );
 
       try {
-        const formData = new FormData();
-        formData.append("jdText", options.payload.jdText);
-        formData.append("experienceText", options.payload.experienceText);
-        formData.append("isFinal", options.isFinal ? "true" : "false");
-
-        if (options.resumeText) {
-          formData.append("resumeText", options.resumeText);
-        } else if (options.payload.resumeFile) {
-          formData.append(
-            "resumeFile",
-            options.payload.resumeFile,
-            options.payload.resumeFile.name,
-          );
-        }
-
-        if (options.clarifyingAnswers?.length) {
-          formData.append(
-            "clarifyingAnswers",
-            JSON.stringify(options.clarifyingAnswers),
-          );
-        }
-
+        // 仅传文本 + Blob URL，不再附带文件本体（规避 4.5MB Payload）
         const response = await fetch("/api/generate", {
           method: "POST",
-          body: formData,
+          headers: { "Content-Type": "application/json" },
           signal: controller.signal,
+          body: JSON.stringify({
+            jdText: options.payload.jdText,
+            experienceText: options.payload.experienceText,
+            isFinal: options.isFinal,
+            resumeUrl: options.payload.resumeUrl,
+            resumeFileName: options.payload.resumeFileName,
+            assetUrls: options.payload.assetUrls,
+            clarifyingAnswers: options.clarifyingAnswers ?? [],
+          }),
         });
 
         const payloadJson = (await response.json().catch(() => null)) as
@@ -176,6 +169,102 @@ export default function WorkspaceShell() {
     [],
   );
 
+  const handleAnalyzePortfolio = useCallback(
+    async (payload: GeneratePayload) => {
+      if (status === "loading") return;
+      if (!guardAccess()) return;
+
+      const portfolioAsset =
+        payload.assetUrls.find((item) =>
+          /\.(mp4|mov|webm|pdf|pptx)$/i.test(item.name),
+        ) ?? payload.assetUrls[0];
+
+      if (!portfolioAsset?.url) {
+        setError("请先上传并直传成功视频或 PDF / PPTX 作品集文件");
+        return;
+      }
+
+      setIsVipUser(isVip());
+      setIsAnalyzingPortfolio(true);
+      setLoadingVariant("portfolio");
+      setLoadingHint("正在让视觉大模型逐帧观看您的作品...");
+      setError(null);
+      setStatus("loading");
+      setResult(null);
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(
+          () => controller.abort(),
+          REQUEST_TIMEOUT_MS,
+        );
+
+        let data: GenerateApiResponse;
+        try {
+          const response = await fetch("/api/analyze-portfolio", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              url: portfolioAsset.url,
+              fileName: portfolioAsset.name,
+              jdText: payload.jdText,
+              userNotes: payload.userNotes || payload.experienceText,
+              assets: payload.assetUrls,
+            }),
+          });
+
+          const payloadJson = (await response.json().catch(() => null)) as
+            | (GenerateApiResponse & { error?: string; detail?: string })
+            | null;
+
+          if (!response.ok) {
+            const detail = payloadJson?.detail
+              ? `：${payloadJson.detail}`
+              : "";
+            throw new Error(
+              `${payloadJson?.error ?? `解析失败（${response.status}）`}${detail}`,
+            );
+          }
+
+          if (!isGenerateApiResponse(payloadJson)) {
+            throw new Error("作品集返回数据格式异常，请重试一次");
+          }
+          data = payloadJson;
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+
+        // 【扣费节点】作品集终版成功后计费（与深度重组一致）
+        consumeFinalGeneration();
+
+        setResult({
+          ...data,
+          matchSubtitle:
+            data.matchSubtitle?.trim() ||
+            "作品集视觉解析完成 · 解锁查看完整 STAR",
+        });
+        setStatus("result");
+      } catch (err) {
+        let message = "作品集解析失败，请稍后重试";
+        if (err instanceof DOMException && err.name === "AbortError") {
+          message = "请求超时，请检查网络后重试";
+        } else if (err instanceof TypeError) {
+          message = "网络异常，无法连接服务器";
+        } else if (err instanceof Error && err.message) {
+          message = err.message;
+        }
+        setError(message);
+        setResult(null);
+        setStatus("idle");
+      } finally {
+        setIsAnalyzingPortfolio(false);
+        setLoadingVariant("default");
+      }
+    },
+    [guardAccess, status],
+  );
+
   const handleGenerate = useCallback(
     async (payload: GeneratePayload) => {
       if (status === "loading") return;
@@ -183,6 +272,8 @@ export default function WorkspaceShell() {
 
       const vip = isVip();
       setIsVipUser(vip);
+      setIsAnalyzingPortfolio(false);
+      setLoadingVariant("default");
       setError(null);
       setStatus("loading");
       setResult(null);
@@ -199,8 +290,10 @@ export default function WorkspaceShell() {
           sessionRef.current = {
             jdText: payload.jdText,
             experienceText: payload.experienceText,
-            resumeFile: payload.resumeFile,
-            resumeText: "",
+            resumeUrl: payload.resumeUrl,
+            resumeFileName: payload.resumeFileName,
+            assetUrls: payload.assetUrls,
+            userNotes: payload.userNotes,
             questions: data.clarifyingQuestions,
           };
 
@@ -265,11 +358,13 @@ export default function WorkspaceShell() {
           payload: {
             jdText: session.jdText,
             experienceText: session.experienceText,
-            resumeFile: session.resumeFile,
+            resumeUrl: session.resumeUrl,
+            resumeFileName: session.resumeFileName,
+            assetUrls: session.assetUrls,
+            userNotes: session.userNotes,
           },
           isFinal: true,
           clarifyingAnswers,
-          resumeText: session.resumeText || undefined,
         });
 
         // 【扣费节点】VIP 终版成功后计入每日用量
@@ -370,14 +465,17 @@ export default function WorkspaceShell() {
 
       <main className="relative grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
         <InputPanel
-          isGenerating={status === "loading"}
+          isGenerating={status === "loading" && !isAnalyzingPortfolio}
+          isAnalyzingPortfolio={isAnalyzingPortfolio}
           onGenerate={handleGenerate}
+          onAnalyzePortfolio={handleAnalyzePortfolio}
         />
         <OutputPanel
           status={status}
           result={result}
           error={error}
           loadingHint={loadingHint}
+          loadingVariant={loadingVariant}
           isVip={isVipUser}
           onDeepDiveSubmit={handleDeepDiveSubmit}
           onDeepDiveSkip={handleDeepDiveSkip}

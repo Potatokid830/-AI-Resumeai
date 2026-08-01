@@ -13,20 +13,34 @@ import {
   CloudUpload,
   FileText,
   FileType2,
+  LoaderCircle,
   Presentation,
   X,
 } from "lucide-react";
+import { uploadFileToBlob } from "@/lib/blobClientUpload";
 
-const ACCEPTED_EXTENSIONS = [".pdf", ".pptx", ".docx"] as const;
-const ACCEPT_ATTR =
-  ".pdf,.pptx,.docx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const MAX_BYTES = 10 * 1024 * 1024;
+const ACCEPTED_EXTENSIONS = [
+  ".pdf",
+  ".pptx",
+  ".docx",
+  ".xlsx",
+  ".csv",
+  ".mp4",
+  ".webm",
+  ".mov",
+] as const;
+const ACCEPT_ATTR = ACCEPTED_EXTENSIONS.join(",");
+const MAX_BYTES = 100 * 1024 * 1024;
 
 export type UploadedFile = {
   id: string;
   name: string;
   size: number;
   extension: string;
+  status: "uploading" | "ready" | "error";
+  progress: number;
+  url?: string;
+  error?: string;
 };
 
 function getExtension(name: string) {
@@ -53,8 +67,17 @@ function truncateFileName(name: string, max = 22) {
   return `${base.slice(0, keep)}…${ext}`;
 }
 
-function FileIcon({ extension }: { extension: string }) {
+function FileIcon({
+  extension,
+  uploading,
+}: {
+  extension: string;
+  uploading?: boolean;
+}) {
   const className = "h-4 w-4 shrink-0 text-zinc-300";
+  if (uploading) {
+    return <LoaderCircle className={`${className} animate-spin`} strokeWidth={1.75} />;
+  }
   if (extension === ".pdf") return <FileText className={className} strokeWidth={1.75} />;
   if (extension === ".pptx")
     return <Presentation className={className} strokeWidth={1.75} />;
@@ -77,41 +100,97 @@ export default function FileDropzone({
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dragDepth = useRef(0);
+  const filesRef = useRef(files);
+  filesRef.current = files;
+
+  const patchFile = useCallback(
+    (id: string, patch: Partial<UploadedFile>) => {
+      const next = filesRef.current.map((item) =>
+        item.id === id ? { ...item, ...patch } : item,
+      );
+      filesRef.current = next;
+      onFilesChange(next);
+    },
+    [onFilesChange],
+  );
+
+  const uploadOne = useCallback(
+    async (id: string, file: File) => {
+      try {
+        const blob = await uploadFileToBlob(file, {
+          folder: "assets",
+          onProgress: ({ percentage }) => {
+            patchFile(id, {
+              status: "uploading",
+              progress: Math.round(percentage),
+            });
+          },
+        });
+        patchFile(id, {
+          status: "ready",
+          progress: 100,
+          url: blob.url,
+          error: undefined,
+        });
+      } catch (err) {
+        patchFile(id, {
+          status: "error",
+          progress: 0,
+          error: err instanceof Error ? err.message : "直传失败",
+        });
+      }
+    },
+    [patchFile],
+  );
 
   const ingestFiles = useCallback(
     (incoming: FileList | File[]) => {
       const list = Array.from(incoming);
       if (!list.length) return;
 
-      const next: UploadedFile[] = [];
+      const staged: { meta: UploadedFile; file: File }[] = [];
       let message: string | null = null;
 
       for (const file of list) {
         if (!isAcceptedFile(file)) {
-          message = "仅支持 .pdf / .pptx / .docx";
+          message = "支持 pdf / pptx / docx / xlsx / csv / 视频";
           continue;
         }
         if (file.size > MAX_BYTES) {
-          message = "单个文件不能超过 10MB";
+          message = "单个文件不能超过 100MB";
           continue;
         }
-        const already = files.some(
+        const already = filesRef.current.some(
           (item) => item.name === file.name && item.size === file.size,
         );
         if (already) continue;
 
-        next.push({
-          id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
-          name: file.name,
-          size: file.size,
-          extension: getExtension(file.name),
+        const id = `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`;
+        staged.push({
+          file,
+          meta: {
+            id,
+            name: file.name,
+            size: file.size,
+            extension: getExtension(file.name),
+            status: "uploading",
+            progress: 0,
+          },
         });
       }
 
       setError(message);
-      if (next.length) onFilesChange([...files, ...next]);
+      if (!staged.length) return;
+
+      const next = [...filesRef.current, ...staged.map((item) => item.meta)];
+      filesRef.current = next;
+      onFilesChange(next);
+
+      for (const item of staged) {
+        void uploadOne(item.meta.id, item.file);
+      }
     },
-    [files, onFilesChange],
+    [onFilesChange, uploadOne],
   );
 
   const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
@@ -154,7 +233,9 @@ export default function FileDropzone({
   };
 
   const removeFile = (id: string) => {
-    onFilesChange(files.filter((file) => file.id !== id));
+    const next = files.filter((file) => file.id !== id);
+    filesRef.current = next;
+    onFilesChange(next);
     setError(null);
   };
 
@@ -235,11 +316,11 @@ export default function FileDropzone({
 
           <p className="max-w-[280px] text-[13px] leading-relaxed tracking-tight text-zinc-300">
             {isDragging
-              ? "松开即可添加文件"
-              : "将你的课程 PPT、PDF 或项目文件拖拽至此，或点击浏览"}
+              ? "松开即可直传云端"
+              : "拖拽大文件至此，将直传 Vercel Blob（绕过 4.5MB 限制）"}
           </p>
           <p className="mt-2 text-[11px] text-zinc-600">
-            支持 .pdf, .pptx, .docx（最大 10MB）
+            pdf / pptx / docx / xlsx / csv / 视频 · 最大 100MB
           </p>
         </motion.div>
       </motion.div>
@@ -267,36 +348,56 @@ export default function FileDropzone({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, x: 8, scale: 0.98 }}
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-zinc-950/60">
-                  <FileIcon extension={file.extension} />
-                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-zinc-950/60">
+                    <FileIcon
+                      extension={file.extension}
+                      uploading={file.status === "uploading"}
+                    />
+                  </div>
 
-                <div className="min-w-0 flex-1">
-                  <p
-                    className="truncate text-[13px] font-medium tracking-tight text-zinc-200"
-                    title={file.name}
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className="truncate text-[13px] font-medium tracking-tight text-zinc-200"
+                      title={file.name}
+                    >
+                      {truncateFileName(file.name)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">
+                      {file.status === "uploading"
+                        ? `正在直传云端 ${file.progress}%`
+                        : file.status === "error"
+                          ? file.error || "上传失败"
+                          : `${formatFileSize(file.size)} · 已就绪`}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={disabled || file.status === "uploading"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeFile(file.id);
+                    }}
+                    aria-label={`移除 ${file.name}`}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-zinc-200 disabled:opacity-50"
                   >
-                    {truncateFileName(file.name)}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-zinc-500">
-                    {formatFileSize(file.size)}
-                  </p>
+                    <X className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    removeFile(file.id);
-                  }}
-                  aria-label={`移除 ${file.name}`}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-zinc-200 disabled:opacity-50"
-                >
-                  <X className="h-3.5 w-3.5" strokeWidth={1.75} />
-                </button>
+                {file.status === "uploading" && (
+                  <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                    <motion.div
+                      className="h-full rounded-full bg-zinc-100"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${file.progress}%` }}
+                      transition={{ duration: 0.2 }}
+                    />
+                  </div>
+                )}
               </motion.li>
             ))}
           </motion.ul>

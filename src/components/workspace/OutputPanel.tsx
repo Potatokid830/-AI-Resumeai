@@ -55,16 +55,24 @@ function EmptyState({ error }: { error?: string | null }) {
   );
 }
 
-function LoadingState({ hint }: { hint: string }) {
+function LoadingState({
+  hint,
+  variant = "default",
+}: {
+  hint: string;
+  variant?: "default" | "portfolio";
+}) {
+  const isPortfolio = variant === "portfolio";
+
   return (
     <motion.div
-      key="loading"
+      key={isPortfolio ? "loading-portfolio" : "loading"}
       {...panelMotion}
       className="flex w-full max-w-lg flex-col gap-5 px-2"
     >
       <div className="flex items-center gap-2 text-sm text-zinc-400">
         <Sparkles
-          className="h-4 w-4 animate-pulse text-zinc-300"
+          className={`h-4 w-4 animate-pulse ${isPortfolio ? "text-amber-200" : "text-zinc-300"}`}
           strokeWidth={1.75}
         />
         <span className="relative overflow-hidden">
@@ -74,15 +82,46 @@ function LoadingState({ hint }: { hint: string }) {
         </span>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-white/[0.07] bg-zinc-950/40 p-5 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] backdrop-blur-xl">
-        <div className="h-3 w-1/3 animate-pulse rounded-md bg-white/[0.08]" />
-        <div className="h-2.5 w-1/2 animate-pulse rounded-md bg-white/[0.05]" />
-        <div className="mt-4 space-y-2.5">
-          <div className="h-2.5 w-full animate-pulse rounded-md bg-white/[0.06]" />
-          <div className="h-2.5 w-[92%] animate-pulse rounded-md bg-white/[0.05]" />
-          <div className="h-2.5 w-[85%] animate-pulse rounded-md bg-white/[0.04]" />
+      {isPortfolio ? (
+        <div className="relative overflow-hidden rounded-2xl border border-amber-200/15 bg-zinc-950/50 p-5 shadow-[0_20px_60px_-40px_rgba(251,191,36,0.35)] backdrop-blur-xl">
+          <div className="mb-4 flex items-center justify-between text-[11px] tracking-[0.14em] text-zinc-500 uppercase">
+            <span>Vision Pipeline</span>
+            <span className="text-amber-200/70">FRAME SCAN</span>
+          </div>
+          <div className="grid grid-cols-6 gap-1.5">
+            {Array.from({ length: 12 }).map((_, index) => (
+              <motion.div
+                key={index}
+                className="aspect-video rounded-md bg-gradient-to-br from-zinc-800 to-zinc-900"
+                animate={{
+                  opacity: [0.25, 0.9, 0.35],
+                  scale: [1, 1.02, 1],
+                }}
+                transition={{
+                  duration: 1.4,
+                  repeat: Infinity,
+                  delay: index * 0.12,
+                  ease: "easeInOut",
+                }}
+              />
+            ))}
+          </div>
+          <p className="mt-4 font-mono text-[11px] leading-relaxed text-zinc-500">
+            <span className="text-amber-200/80">$</span> multimodal.watch --frames
+            infinite --engine creative-director
+          </p>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-3 rounded-2xl border border-white/[0.07] bg-zinc-950/40 p-5 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+          <div className="h-3 w-1/3 animate-pulse rounded-md bg-white/[0.08]" />
+          <div className="h-2.5 w-1/2 animate-pulse rounded-md bg-white/[0.05]" />
+          <div className="mt-4 space-y-2.5">
+            <div className="h-2.5 w-full animate-pulse rounded-md bg-white/[0.06]" />
+            <div className="h-2.5 w-[92%] animate-pulse rounded-md bg-white/[0.05]" />
+            <div className="h-2.5 w-[85%] animate-pulse rounded-md bg-white/[0.04]" />
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -359,6 +398,7 @@ type OutputPanelProps = {
   result: GenerateApiResponse | null;
   error?: string | null;
   loadingHint?: string;
+  loadingVariant?: "default" | "portfolio";
   isVip?: boolean;
   onDeepDiveSubmit?: (answers: string[]) => void;
   onDeepDiveSkip?: () => void;
@@ -371,6 +411,7 @@ export default function OutputPanel({
   result,
   error,
   loadingHint = "AI 正在对齐 JD 关键词...",
+  loadingVariant = "default",
   isVip = false,
   onDeepDiveSubmit,
   onDeepDiveSkip,
@@ -394,7 +435,9 @@ export default function OutputPanel({
       >
         <AnimatePresence mode="wait">
           {status === "idle" && <EmptyState error={error} />}
-          {status === "loading" && <LoadingState hint={loadingHint} />}
+          {status === "loading" && (
+            <LoadingState hint={loadingHint} variant={loadingVariant} />
+          )}
           {status === "deepdive" && result && (
             <DeepDivePanel
               questions={result.clarifyingQuestions}
