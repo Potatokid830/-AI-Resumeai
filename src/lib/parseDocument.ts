@@ -1,5 +1,6 @@
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy } from "unpdf";
+import { fetchBlobBuffer } from "@/lib/fetchBlobBuffer";
 
 /** Serverless 内解析上限，避免超大视频/文件撑爆内存 */
 export const MAX_PARSE_BYTES = 40 * 1024 * 1024;
@@ -103,26 +104,26 @@ function fileNameFromUrl(url: string, fallback: string) {
   }
 }
 
-/** 从 Blob URL 拉取并解析可提取文本的文件 */
+/** 从 Private Blob URL 拉取并解析可提取文本的文件 */
 export async function parseDocumentFromUrl(
   url: string,
   preferredName?: string,
 ): Promise<ParseDocumentResult> {
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
+    const blob = await fetchBlobBuffer(url);
+    if (!blob) {
       return {
         ok: false,
-        error: `无法下载云端文件（${response.status}）`,
+        error: "无法下载云端文件（Private Blob 读取失败）",
       };
     }
 
-    const mime = response.headers.get("content-type") ?? "";
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const fileName =
-      preferredName || fileNameFromUrl(url, "document");
-
-    return parseDocumentBuffer(buffer, fileName, mime.split(";")[0]?.trim());
+    const fileName = preferredName || fileNameFromUrl(url, "document");
+    return parseDocumentBuffer(
+      blob.buffer,
+      fileName,
+      blob.contentType.split(";")[0]?.trim(),
+    );
   } catch {
     return {
       ok: false,

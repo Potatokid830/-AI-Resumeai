@@ -25,7 +25,8 @@ export async function uploadFileToBlob(
 
   try {
     const blob = await upload(pathname, file, {
-      access: "public",
+      // Store 为 Private 时必须用 private，否则 /mpu 会 400
+      access: "private",
       handleUploadUrl: "/api/upload",
       multipart: true,
       contentType: file.type || "application/octet-stream",

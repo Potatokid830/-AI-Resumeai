@@ -6,6 +6,7 @@ import {
   FileState,
   GoogleAIFileManager,
 } from "@google/generative-ai/server";
+import { fetchBlobBuffer } from "@/lib/fetchBlobBuffer";
 import { parseDocumentFromUrl } from "@/lib/parseDocument";
 
 const VISION_PROMPT = `你是一位资深创意总监。请审阅该作品，提取其核心商业定位、品牌口号、视觉特效、剪辑手法或营销理念，输出 200 字以内的专业纯文本总结。不要使用 Markdown，不要编造无法从素材中推断的投放数据。`;
@@ -100,7 +101,7 @@ async function waitForFileActive(
 }
 
 /**
- * 从 Vercel Blob 公开 URL 拉取文件 → 上传 Gemini Files API → 多模态审阅
+ * 从 Private Blob 拉取文件 → 上传 Gemini Files API → 多模态审阅
  */
 async function analyzeWithGemini(
   url: string,
@@ -112,13 +113,12 @@ async function analyzeWithGemini(
     throw new Error("未配置 GEMINI_API_KEY");
   }
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`无法下载云端文件（HTTP ${response.status}）`);
+  const blob = await fetchBlobBuffer(url);
+  if (!blob) {
+    throw new Error("无法下载云端文件（Private Blob 读取失败）");
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
-  const buffer = Buffer.from(await response.arrayBuffer());
+  const { buffer, contentType } = blob;
 
   if (buffer.length <= 0) {
     throw new Error("云端文件为空");
