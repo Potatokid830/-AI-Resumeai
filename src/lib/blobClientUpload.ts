@@ -8,14 +8,12 @@ export type BlobUploadProgress = {
   percentage: number;
 };
 
-const MULTIPART_THRESHOLD = 4.5 * 1024 * 1024;
-
 function sanitizeFileName(name: string) {
   return name.replace(/[^\w.\-()\u4e00-\u9fff]+/g, "_").slice(0, 120);
 }
 
 /**
- * 浏览器直传 Vercel Blob（先向 /api/upload 换 Token，再上传到云端）
+ * 浏览器直传 Vercel Blob（先向 /api/upload 换 Token，再分片直传到云端）
  */
 export async function uploadFileToBlob(
   file: File,
@@ -31,7 +29,8 @@ export async function uploadFileToBlob(
     const blob = await upload(pathname, file, {
       access: "public",
       handleUploadUrl: "/api/upload",
-      multipart: file.size >= MULTIPART_THRESHOLD,
+      // 显式开启分片直传，支持大 PDF / 视频作品集
+      multipart: true,
       onUploadProgress: (event) => {
         options?.onProgress?.({
           loaded: event.loaded,
@@ -42,7 +41,6 @@ export async function uploadFileToBlob(
     });
     return blob;
   } catch (error) {
-    // SDK 统一抛出 Failed to retrieve the client token，补一次诊断信息
     const detail = await diagnoseTokenError();
     const base =
       error instanceof Error ? error.message : "上传失败，请稍后重试";
@@ -60,7 +58,7 @@ async function diagnoseTokenError(): Promise<string | null> {
         payload: {
           pathname: "diagnose/ping.bin",
           clientPayload: null,
-          multipart: false,
+          multipart: true,
         },
       }),
     });

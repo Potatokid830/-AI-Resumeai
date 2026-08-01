@@ -3,13 +3,10 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-/** 客户端直传上限（绕过 Vercel 4.5MB Request Body 限制） */
-const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
-
 /**
  * Client Upload Token 签发路由
- * 浏览器 `upload()` → POST /api/upload (blob.generate-client-token) → 返回 clientToken
- * 上传完成后 Vercel 可能回调 blob.upload-completed（本地开发通常不触发）
+ * 浏览器 `upload({ multipart: true })` → POST /api/upload → 返回 clientToken
+ * 随后浏览器直传 Vercel Blob `/api/blob/mpu` 完成分片上传
  */
 export async function POST(request: Request): Promise<NextResponse> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
@@ -39,40 +36,31 @@ export async function POST(request: Request): Promise<NextResponse> {
       body,
       request,
       token,
-      onBeforeGenerateToken: async (pathname) => {
-        // MVP：不强制登录；限制体积与类型（支持通配）
-        console.log("[blob] generate client token for", pathname);
+      onBeforeGenerateToken: async (pathname, _clientPayload, multipart) => {
+        console.log("[blob] generate client token", {
+          pathname,
+          multipart,
+        });
+
         return {
-          allowedContentTypes: [
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "application/vnd.ms-powerpoint",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-excel",
-            "application/octet-stream",
-            "text/*",
-            "image/*",
-            "video/*",
-            "audio/*",
-          ],
+          // 严格：允许最大 100MB（含 multipart 分片直传）
+          maximumSizeInBytes: 100 * 1024 * 1024,
+          // 大文件分片耗时长，默认短过期会导致 /mpu 400
+          validUntil: Date.now() + 60 * 60 * 1000, // 1 小时
           addRandomSuffix: true,
-          maximumSizeInBytes: MAX_UPLOAD_BYTES,
           allowOverwrite: false,
           tokenPayload: JSON.stringify({
             purpose: "resumeai-workspace",
             pathname,
+            multipart,
           }),
         };
       },
       onUploadCompleted: async ({ blob }) => {
-        // 生产环境 webhook；本地 localhost 通常收不到
         console.log("[blob] upload completed", blob.pathname, blob.url);
       },
     });
 
-    // 成功时必须返回 { clientToken } 或 upload-completed 的 ok 响应
     return NextResponse.json(jsonResponse);
   } catch (error) {
     const message =
