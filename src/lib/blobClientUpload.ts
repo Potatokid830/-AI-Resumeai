@@ -27,18 +27,51 @@ export async function uploadFileToBlob(
   const folder = options?.folder ?? "workspace";
   const pathname = `${folder}/${Date.now()}-${sanitizeFileName(file.name)}`;
 
-  const blob = await upload(pathname, file, {
-    access: "public",
-    handleUploadUrl: "/api/upload",
-    multipart: file.size >= MULTIPART_THRESHOLD,
-    onUploadProgress: (event) => {
-      options?.onProgress?.({
-        loaded: event.loaded,
-        total: event.total,
-        percentage: event.percentage,
-      });
-    },
-  });
+  try {
+    const blob = await upload(pathname, file, {
+      access: "public",
+      handleUploadUrl: "/api/upload",
+      multipart: file.size >= MULTIPART_THRESHOLD,
+      onUploadProgress: (event) => {
+        options?.onProgress?.({
+          loaded: event.loaded,
+          total: event.total,
+          percentage: event.percentage,
+        });
+      },
+    });
+    return blob;
+  } catch (error) {
+    // SDK 统一抛出 Failed to retrieve the client token，补一次诊断信息
+    const detail = await diagnoseTokenError();
+    const base =
+      error instanceof Error ? error.message : "上传失败，请稍后重试";
+    throw new Error(detail ? `${base}（${detail}）` : base);
+  }
+}
 
-  return blob;
+async function diagnoseTokenError(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "blob.generate-client-token",
+        payload: {
+          pathname: "diagnose/ping.bin",
+          clientPayload: null,
+          multipart: false,
+        },
+      }),
+    });
+    const data = (await res.json().catch(() => null)) as {
+      error?: string;
+      clientToken?: string;
+    } | null;
+    if (data?.error) return data.error;
+    if (!res.ok) return `HTTP ${res.status}`;
+    return null;
+  } catch {
+    return null;
+  }
 }
