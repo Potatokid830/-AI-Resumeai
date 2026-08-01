@@ -29,8 +29,8 @@ export type GeneratePayload = {
 type InputPanelProps = {
   isGenerating?: boolean;
   isAnalyzingPortfolio?: boolean;
-  onGenerate?: (payload: GeneratePayload) => void;
-  onAnalyzePortfolio?: (payload: GeneratePayload) => void;
+  onGenerate?: (payload: GeneratePayload) => void | Promise<void>;
+  onAnalyzePortfolio?: (payload: GeneratePayload) => void | Promise<void>;
 };
 
 function formatFileSize(bytes: number) {
@@ -201,7 +201,9 @@ export default function InputPanel({
           <div className="flex w-full max-w-xl flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-center">
             <button
               type="button"
-              onClick={() => onGenerate?.(buildPayload())}
+              onClick={() => {
+                void onGenerate?.(buildPayload());
+              }}
               disabled={busy || isUploading}
               className="group relative inline-flex flex-1 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:cursor-not-allowed sm:flex-none"
             >
@@ -226,7 +228,9 @@ export default function InputPanel({
 
             <button
               type="button"
-              onClick={() => onAnalyzePortfolio?.(buildPayload())}
+              onClick={() => {
+                void onAnalyzePortfolio?.(buildPayload());
+              }}
               disabled={busy || isUploading || !portfolioReady}
               title={
                 portfolioReady

@@ -2,35 +2,11 @@ import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import type { GenerateApiResponse } from "@/lib/generateTypes";
 import { extractMediaInsights } from "@/lib/extractMediaInsights";
+import { PORTFOLIO_STAR_SYSTEM } from "@/lib/prompts";
 
 export const runtime = "nodejs";
 /** 视频需经 Gemini Files 处理，适当放宽超时 */
 export const maxDuration = 120;
-
-const PORTFOLIO_STAR_SYSTEM = `你是一位拥有 10 年硅谷/一线大厂招聘经验的资深 HR 总监兼业务面经专家。
-你将收到「视觉大模型/创意总监」对多媒体作品集的专业洞察，以及用户的简单描述与可选 JD。
-请把洞察「降维打击」为可直接放进简历的项目经历：动词开局、STAR 法则、结果导向；绝对不要捏造未提供的投放数据。
-
-# 强制输出格式（只返回合法 JSON）
-{
-  "phase": "result",
-  "matchScore": number,
-  "matchSubtitle": string,
-  "optimizedResume": {
-    "role": string,
-    "company": string,
-    "matchedKeywords": string[],
-    "summaryHtml": string,
-    "bullets": [
-      { "letter": "S"|"T"|"A"|"R", "label": string, "html": string }
-    ]
-  },
-  "gapAnalysis": string,
-  "interviewDefense": string,
-  "clarifyingQuestions": []
-}
-
-说明：summaryHtml / bullets[].html 可含 <mark>JD关键词</mark>；interviewDefense 用第一人称。`;
 
 type AnalyzeBody = {
   url?: string;

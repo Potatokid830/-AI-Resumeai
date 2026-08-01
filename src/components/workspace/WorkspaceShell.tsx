@@ -11,6 +11,8 @@ import {
   VIP_DAILY_CAP_MESSAGE,
   checkGenerationAccess,
   consumeFinalGeneration,
+  isContentUnlocked,
+  isDevBypassEnabled,
   isVip,
 } from "@/lib/usage";
 import PaywallModal from "@/components/PaywallModal";
@@ -20,6 +22,9 @@ import Toast from "./Toast";
 import type { WorkspaceStatus } from "./types";
 
 const REQUEST_TIMEOUT_MS = 90_000;
+const PORTFOLIO_TIMEOUT_MS = 120_000;
+/** Gemini 视觉阶段展示时长后切到 DeepSeek 文案 */
+const PORTFOLIO_STAGE_FLIP_MS = 14_000;
 const CODE_PURCHASE_URL = "https://m.tb.cn/resumeai-pro";
 
 type SessionPayload = {
@@ -61,7 +66,7 @@ export default function WorkspaceShell() {
   const [result, setResult] = useState<GenerateApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
-  const [isVipUser, setIsVipUser] = useState(false);
+  const [contentUnlocked, setContentUnlocked] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<"default" | "alert">(
     "default",
@@ -70,15 +75,34 @@ export default function WorkspaceShell() {
   const [loadingVariant, setLoadingVariant] = useState<"default" | "portfolio">(
     "default",
   );
+  const [portfolioStep, setPortfolioStep] = useState(0);
   const [isAnalyzingPortfolio, setIsAnalyzingPortfolio] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionRef = useRef<SessionPayload | null>(null);
   const exportHandlerRef = useRef<(() => Promise<void>) | null>(null);
   const canExport = status === "result" && Boolean(result?.optimizedResume);
 
-  useEffect(() => {
-    setIsVipUser(isVip());
+  const refreshUnlockState = useCallback(() => {
+    setContentUnlocked(isContentUnlocked());
   }, []);
+
+  useEffect(() => {
+    refreshUnlockState();
+  }, [refreshUnlockState]);
+
+  useEffect(() => {
+    if (!isAnalyzingPortfolio) {
+      setPortfolioStep(0);
+      return;
+    }
+    setPortfolioStep(0);
+    setLoadingHint("正在让 Gemini 视觉引擎审阅您的作品…");
+    const flipId = window.setTimeout(() => {
+      setPortfolioStep(1);
+      setLoadingHint("正在让 DeepSeek 重构 STAR 简历…");
+    }, PORTFOLIO_STAGE_FLIP_MS);
+    return () => window.clearTimeout(flipId);
+  }, [isAnalyzingPortfolio]);
 
   const showToast = useCallback(
     (
@@ -184,10 +208,10 @@ export default function WorkspaceShell() {
         return;
       }
 
-      setIsVipUser(isVip());
+      refreshUnlockState();
       setIsAnalyzingPortfolio(true);
       setLoadingVariant("portfolio");
-      setLoadingHint("正在让视觉大模型逐帧观看您的作品...");
+      setLoadingHint("正在让 Gemini 视觉引擎审阅您的作品…");
       setError(null);
       setStatus("loading");
       setResult(null);
@@ -196,7 +220,7 @@ export default function WorkspaceShell() {
         const controller = new AbortController();
         const timeoutId = window.setTimeout(
           () => controller.abort(),
-          REQUEST_TIMEOUT_MS,
+          PORTFOLIO_TIMEOUT_MS,
         );
 
         let data: GenerateApiResponse;
@@ -245,6 +269,7 @@ export default function WorkspaceShell() {
             "作品集视觉解析完成 · 解锁查看完整 STAR",
         });
         setStatus("result");
+        refreshUnlockState();
       } catch (err) {
         let message = "作品集解析失败，请稍后重试";
         if (err instanceof DOMException && err.name === "AbortError") {
@@ -262,7 +287,7 @@ export default function WorkspaceShell() {
         setLoadingVariant("default");
       }
     },
-    [guardAccess, status],
+    [guardAccess, refreshUnlockState, status],
   );
 
   const handleGenerate = useCallback(
@@ -270,8 +295,7 @@ export default function WorkspaceShell() {
       if (status === "loading") return;
       if (!guardAccess()) return;
 
-      const vip = isVip();
-      setIsVipUser(vip);
+      refreshUnlockState();
       setIsAnalyzingPortfolio(false);
       setLoadingVariant("default");
       setError(null);
@@ -279,7 +303,7 @@ export default function WorkspaceShell() {
       setResult(null);
 
       try {
-        if (vip) {
+        if (isVip()) {
           // VIP：两步深挖（Gap 不计费）
           setLoadingHint("AI 正在做 Gap 分析并准备追问...");
           const data = await requestGenerate({
@@ -317,9 +341,11 @@ export default function WorkspaceShell() {
 
         setResult({
           ...data,
-          matchSubtitle: data.matchSubtitle?.trim() || "基础版已生成 · 解锁查看完整解析",
+          matchSubtitle:
+            data.matchSubtitle?.trim() || "基础版已生成 · 解锁查看完整解析",
         });
         setStatus("result");
+        refreshUnlockState();
       } catch (err) {
         let message = "生成失败，请稍后重试";
         if (err instanceof DOMException && err.name === "AbortError") {
@@ -334,7 +360,7 @@ export default function WorkspaceShell() {
         setStatus("idle");
       }
     },
-    [guardAccess, requestGenerate, status],
+    [guardAccess, refreshUnlockState, requestGenerate, status],
   );
 
   const handleDeepDiveSubmit = useCallback(
@@ -375,6 +401,7 @@ export default function WorkspaceShell() {
           matchSubtitle: data.matchSubtitle?.trim() || "已完成 JD 对齐分析",
         });
         setStatus("result");
+        refreshUnlockState();
       } catch (err) {
         let message = "终版生成失败，请重试";
         if (err instanceof DOMException && err.name === "AbortError") {
@@ -388,7 +415,7 @@ export default function WorkspaceShell() {
         setStatus("deepdive");
       }
     },
-    [guardAccess, requestGenerate, status],
+    [guardAccess, refreshUnlockState, requestGenerate, status],
   );
 
   const handleDeepDiveSkip = useCallback(() => {
@@ -399,12 +426,14 @@ export default function WorkspaceShell() {
 
   const handleNavExport = useCallback(() => {
     if (!canExport) return;
-    if (!isVipUser) {
+    if (!contentUnlocked) {
       openPaywall();
       return;
     }
-    void exportHandlerRef.current?.();
-  }, [canExport, isVipUser, openPaywall]);
+    void exportHandlerRef.current?.()?.catch(() => {
+      showToast("PDF 导出失败，请重试");
+    });
+  }, [canExport, contentUnlocked, openPaywall, showToast]);
 
   const handleRegisterExport = useCallback((fn: (() => Promise<void>) | null) => {
     exportHandlerRef.current = fn;
@@ -420,25 +449,35 @@ export default function WorkspaceShell() {
   const handleRedeemSuccess = useCallback(
     (type: "onetime" | "vip") => {
       setIsPaywallOpen(false);
-      setIsVipUser(isVip());
+      refreshUnlockState();
       showToast(
         type === "onetime"
-          ? "单次卡已到账，可再生成 1 份终版简历"
+          ? "单次卡已生效：全文已解锁，并可再生成 1 份终版"
           : "VIP 月卡已激活，完整内容与导出已解锁",
       );
     },
-    [showToast],
+    [refreshUnlockState, showToast],
   );
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-zinc-950 text-zinc-50">
       <header className="relative z-20 flex h-14 shrink-0 items-center justify-between border-b border-white/[0.06] px-5 sm:px-6">
-        <Link
-          href="/"
-          className="font-[family-name:var(--font-display)] text-[15px] font-semibold tracking-tight text-zinc-100 transition-colors hover:text-white"
-        >
-          ResumeAI
-        </Link>
+        <div className="flex items-center gap-2.5">
+          <Link
+            href="/"
+            className="font-[family-name:var(--font-display)] text-[15px] font-semibold tracking-tight text-zinc-100 transition-colors hover:text-white"
+          >
+            ResumeAI
+          </Link>
+          {isDevBypassEnabled() && (
+            <span
+              title="开发旁路已开启：跳过付费墙与次数限制。测付费墙请设 NEXT_PUBLIC_DEV_BYPASS_PAYWALL=false"
+              className="rounded-md border border-emerald-400/25 bg-emerald-400/10 px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-emerald-300/90"
+            >
+              DEV UNLOCK
+            </span>
+          )}
+        </div>
 
         <button
           type="button"
@@ -447,9 +486,9 @@ export default function WorkspaceShell() {
           title={
             !canExport
               ? "生成结果后可导出"
-              : isVipUser
+              : contentUnlocked
                 ? "导出 PDF"
-                : "VIP 专属导出"
+                : "解锁后可导出"
           }
           onClick={handleNavExport}
           className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
@@ -476,7 +515,8 @@ export default function WorkspaceShell() {
           error={error}
           loadingHint={loadingHint}
           loadingVariant={loadingVariant}
-          isVip={isVipUser}
+          portfolioStep={portfolioStep}
+          contentUnlocked={contentUnlocked}
           onDeepDiveSubmit={handleDeepDiveSubmit}
           onDeepDiveSkip={handleDeepDiveSkip}
           onUnlockRequest={openPaywall}

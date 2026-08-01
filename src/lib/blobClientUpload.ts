@@ -6,11 +6,44 @@ export type BlobUploadProgress = {
   loaded: number;
   total: number;
   percentage: number;
+  /** uploading=传字节；finalizing=分片已满，等待 complete */
+  phase: "uploading" | "finalizing";
 };
 
+const UPLOAD_TIMEOUT_MS = 3 * 60 * 1000;
+/** 小于此值用单次直传，避免小文件走 MPU complete 卡住 */
+const MULTIPART_MIN_BYTES = 8 * 1024 * 1024;
+
+function sanitizeFileName(name: string) {
+  const cleaned = name
+    .replace(/[%#?&=+]/g, "_")
+    .replace(/[^\w.\-()\u4e00-\u9fff]+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 120);
+  return cleaned || "upload.bin";
+}
+
+function guessContentType(file: File): string {
+  if (file.type && file.type !== "application/octet-stream") {
+    return file.type;
+  }
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".docx")) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  if (lower.endsWith(".doc")) return "application/msword";
+  if (lower.endsWith(".pptx")) {
+    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  }
+  if (lower.endsWith(".mp4")) return "video/mp4";
+  if (lower.endsWith(".mov")) return "video/quicktime";
+  if (lower.endsWith(".webm")) return "video/webm";
+  return "application/octet-stream";
+}
+
 /**
- * 浏览器直传 Vercel Blob
- * pathname 使用原始 file.name，避免自定义前缀导致 Token/pathname 校验冲突
+ * 浏览器直传 Private Vercel Blob
  */
 export async function uploadFileToBlob(
   file: File,
@@ -19,31 +52,71 @@ export async function uploadFileToBlob(
     onProgress?: (progress: BlobUploadProgress) => void;
   },
 ) {
-  // 暂时忽略 folder 前缀，直接使用原始文件名（保留扩展名供 Blob 推断 contentType）
-  void options?.folder;
-  const pathname = file.name;
+  const folder = options?.folder ?? "workspace";
+  const pathname = `${folder}/${Date.now()}-${sanitizeFileName(file.name)}`;
+  const useMultipart = file.size >= MULTIPART_MIN_BYTES;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+
+  let reachedHighWater = false;
 
   try {
     const blob = await upload(pathname, file, {
-      // Store 为 Private 时必须用 private，否则 /mpu 会 400
       access: "private",
       handleUploadUrl: "/api/upload",
-      multipart: true,
-      contentType: file.type || "application/octet-stream",
+      multipart: useMultipart,
+      contentType: guessContentType(file),
+      abortSignal: controller.signal,
       onUploadProgress: (event) => {
+        const percentage = Math.min(99, Math.round(event.percentage));
+        // 分片场景：接近完成时 UI 进入 finalizing，避免假死在 100%
+        if (event.percentage >= 99 || (useMultipart && event.percentage >= 95)) {
+          reachedHighWater = true;
+          options?.onProgress?.({
+            loaded: event.loaded,
+            total: event.total,
+            percentage: 99,
+            phase: "finalizing",
+          });
+          return;
+        }
         options?.onProgress?.({
           loaded: event.loaded,
           total: event.total,
-          percentage: event.percentage,
+          percentage,
+          phase: "uploading",
         });
       },
     });
+
+    options?.onProgress?.({
+      loaded: file.size,
+      total: file.size,
+      percentage: 100,
+      phase: "finalizing",
+    });
+
     return blob;
   } catch (error) {
-    const detail = await diagnoseUploadError();
-    const base =
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(
+        reachedHighWater
+          ? "上传已到 99%，但云端确认超时。请压缩 PDF 后重试，或检查网络后重新上传。"
+          : "上传超时，请检查网络后重试。",
+      );
+    }
+
+    const message =
       error instanceof Error ? error.message : "上传失败，请稍后重试";
-    throw new Error(detail ? `${base}（${detail}）` : base);
+
+    if (/client token|retrieve the client/i.test(message)) {
+      const detail = await diagnoseUploadError();
+      throw new Error(detail ? `${message}（${detail}）` : message);
+    }
+
+    throw new Error(message);
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 }
 
@@ -63,7 +136,6 @@ async function diagnoseUploadError(): Promise<string | null> {
     });
     const data = (await res.json().catch(() => null)) as {
       error?: string;
-      clientToken?: string;
     } | null;
     if (data?.error) return data.error;
     if (!res.ok) return `HTTP ${res.status}`;

@@ -11,9 +11,12 @@ export async function POST(request: Request): Promise<NextResponse> {
       body,
       request,
       onBeforeGenerateToken: async () => {
-        // 不写 allowedContentTypes = 允许任意格式
         return {
+          // 不限制 MIME
           maximumSizeInBytes: 100 * 1024 * 1024,
+          // 大文件分片 + complete 可能超过默认过期时间
+          validUntil: Date.now() + 60 * 60 * 1000,
+          addRandomSuffix: true,
         };
       },
     });

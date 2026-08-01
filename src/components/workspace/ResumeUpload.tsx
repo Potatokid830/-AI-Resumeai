@@ -18,7 +18,13 @@ export type ResumeBlobAsset = {
 
 export type ResumeUploadState =
   | { status: "idle" }
-  | { status: "uploading"; name: string; size: number; progress: number }
+  | {
+      status: "uploading";
+      name: string;
+      size: number;
+      progress: number;
+      phase?: "uploading" | "finalizing";
+    }
   | { status: "ready"; asset: ResumeBlobAsset }
   | { status: "error"; name: string; size: number; message: string };
 
@@ -70,12 +76,13 @@ export default function ResumeUpload({
     try {
       const blob = await uploadFileToBlob(incoming, {
         folder: "resumes",
-        onProgress: ({ percentage }) => {
+        onProgress: ({ percentage, phase }) => {
           onStateChange({
             status: "uploading",
             name: incoming.name,
             size: incoming.size,
             progress: Math.round(percentage),
+            phase,
           });
         },
       });
@@ -188,7 +195,9 @@ export default function ResumeUpload({
                 </p>
                 <p className="mt-0.5 text-[11px] text-zinc-500">
                   {isUploading
-                    ? "正在直传云端…"
+                    ? state.phase === "finalizing"
+                      ? "正在确认云端写入…"
+                      : `正在直传云端 ${state.progress}%`
                     : formatFileSize(fileMeta?.size ?? 0)}
                   {state.status === "ready" && " · 已就绪"}
                 </p>

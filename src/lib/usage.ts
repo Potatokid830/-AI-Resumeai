@@ -8,6 +8,8 @@ export const VIP_STORAGE_KEY = "resume_ai_is_vip";
 export const VIP_STATE_STORAGE_KEY = "resume_ai_vip_state";
 /** 兼容字段：is_vip_monthly */
 export const VIP_MONTHLY_FLAG_KEY = "is_vip_monthly";
+/** 内容解锁（单次卡 ONETIME-99 兑换后可解除结果区打码） */
+export const CONTENT_UNLOCK_KEY = "resume_ai_content_unlocked";
 
 export const FREE_USAGE_LIMIT = 1;
 export const VIP_DAILY_LIMIT = 20;
@@ -17,6 +19,19 @@ export const VIP_CODE = "VIP-299";
 
 /** 兼容旧测试码 → 视为 VIP 月卡 */
 const LEGACY_VIP_CODES = ["RESUME-666", "OFFER-888"] as const;
+
+/**
+ * 开发者旁路：跳过次数门禁 / 打码 / VIP 日上限，且不扣费。
+ * - 默认：本地 `next dev`（NODE_ENV=development）自动开启
+ * - 显式关闭（测付费墙）：`.env.local` 设 `NEXT_PUBLIC_DEV_BYPASS_PAYWALL=false`
+ * - 生产预览强制开：设 `NEXT_PUBLIC_DEV_BYPASS_PAYWALL=true`（切勿带到正式环境）
+ */
+export function isDevBypassEnabled(): boolean {
+  const flag = process.env.NEXT_PUBLIC_DEV_BYPASS_PAYWALL?.trim().toLowerCase();
+  if (flag === "false" || flag === "0" || flag === "off") return false;
+  if (flag === "true" || flag === "1" || flag === "on") return true;
+  return process.env.NODE_ENV === "development";
+}
 
 export type VipState = {
   vipCode: string;
@@ -131,7 +146,21 @@ export function getVipState(): VipState | null {
 }
 
 export function isVip(): boolean {
+  if (isDevBypassEnabled()) return true;
   return getVipState() !== null;
+}
+
+/** 解锁结果区完整 STAR / 洞察（VIP 或已兑换单次卡） */
+export function unlockFullContent() {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CONTENT_UNLOCK_KEY, "true");
+}
+
+export function isContentUnlocked(): boolean {
+  if (typeof window === "undefined") return false;
+  if (isDevBypassEnabled()) return true;
+  if (isVip()) return true;
+  return window.localStorage.getItem(CONTENT_UNLOCK_KEY) === "true";
 }
 
 export function activateVip(vipCode: string = VIP_CODE) {
@@ -171,6 +200,7 @@ export function redeemCode(code: string): RedeemResult {
 
   if (normalized === ONETIME_CODE) {
     setExtraCredits(getExtraCredits() + 1);
+    unlockFullContent(); // 单次卡：+1 次生成，并一键解锁当前结果全文
     return { ok: true, type: "onetime" };
   }
 
@@ -179,6 +209,7 @@ export function redeemCode(code: string): RedeemResult {
     (LEGACY_VIP_CODES as readonly string[]).includes(normalized)
   ) {
     activateVip(normalized === VIP_CODE ? VIP_CODE : normalized);
+    unlockFullContent();
     return { ok: true, type: "vip" };
   }
 
@@ -191,6 +222,10 @@ export function redeemCode(code: string): RedeemResult {
  * - 非 VIP：免费 1 次 + 单次卡额外次数，用尽则 paywall
  */
 export function checkGenerationAccess(): AccessGate {
+  if (isDevBypassEnabled()) {
+    return { allowed: true };
+  }
+
   const vip = getVipState();
   if (vip) {
     if (vip.dailyUsageCount >= VIP_DAILY_LIMIT) {
@@ -217,6 +252,9 @@ export function shouldShowPaywall(): boolean {
  * Gap 分析 / 追问阶段绝不调用本函数。
  */
 export function consumeFinalGeneration(): void {
+  // 开发旁路不写用量，避免调试把免费额度 / VIP 日上限耗尽
+  if (isDevBypassEnabled()) return;
+
   const vip = getVipState();
   if (vip) {
     writeVipState({

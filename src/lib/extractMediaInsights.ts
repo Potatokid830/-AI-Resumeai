@@ -8,8 +8,7 @@ import {
 } from "@google/generative-ai/server";
 import { fetchBlobBuffer } from "@/lib/fetchBlobBuffer";
 import { parseDocumentFromUrl } from "@/lib/parseDocument";
-
-const VISION_PROMPT = `你是一位资深创意总监。请审阅该作品，提取其核心商业定位、品牌口号、视觉特效、剪辑手法或营销理念，输出 200 字以内的专业纯文本总结。不要使用 Markdown，不要编造无法从素材中推断的投放数据。`;
+import { VISION_PROMPT } from "@/lib/prompts";
 
 export type MediaInsightResult = {
   insight: string;

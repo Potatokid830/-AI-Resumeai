@@ -39,6 +39,8 @@ export type UploadedFile = {
   extension: string;
   status: "uploading" | "ready" | "error";
   progress: number;
+  /** uploading | finalizing（分片完成，等待云端确认） */
+  phase?: "uploading" | "finalizing";
   url?: string;
   error?: string;
 };
@@ -119,16 +121,18 @@ export default function FileDropzone({
       try {
         const blob = await uploadFileToBlob(file, {
           folder: "assets",
-          onProgress: ({ percentage }) => {
+          onProgress: ({ percentage, phase }) => {
             patchFile(id, {
               status: "uploading",
               progress: Math.round(percentage),
+              phase,
             });
           },
         });
         patchFile(id, {
           status: "ready",
           progress: 100,
+          phase: "finalizing",
           url: blob.url,
           error: undefined,
         });
@@ -367,7 +371,9 @@ export default function FileDropzone({
                     </p>
                     <p className="mt-0.5 text-[11px] text-zinc-500">
                       {file.status === "uploading"
-                        ? `正在直传云端 ${file.progress}%`
+                        ? file.phase === "finalizing"
+                          ? "分片已传完，正在确认云端写入…"
+                          : `正在直传云端 ${file.progress}%`
                         : file.status === "error"
                           ? file.error || "上传失败"
                           : `${formatFileSize(file.size)} · 已就绪`}

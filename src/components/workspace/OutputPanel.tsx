@@ -55,14 +55,33 @@ function EmptyState({ error }: { error?: string | null }) {
   );
 }
 
+const PORTFOLIO_PIPELINE = [
+  {
+    id: "gemini",
+    label: "Gemini Vision",
+    detail: "正在让 Gemini 视觉引擎审阅您的作品…",
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek STAR",
+    detail: "正在让 DeepSeek 重构 STAR 简历…",
+  },
+] as const;
+
 function LoadingState({
   hint,
   variant = "default",
+  portfolioStep = 0,
 }: {
   hint: string;
   variant?: "default" | "portfolio";
+  portfolioStep?: number;
 }) {
   const isPortfolio = variant === "portfolio";
+  const activeStep = Math.min(
+    PORTFOLIO_PIPELINE.length - 1,
+    Math.max(0, portfolioStep),
+  );
 
   return (
     <motion.div
@@ -77,7 +96,7 @@ function LoadingState({
         />
         <span className="relative overflow-hidden">
           <span className="animate-[shimmer_2s_linear_infinite] bg-[linear-gradient(90deg,rgba(161,161,170,0.45)_0%,rgba(250,250,250,0.95)_45%,rgba(161,161,170,0.45)_100%)] bg-[length:200%_100%] bg-clip-text text-transparent">
-            {hint}
+            {isPortfolio ? PORTFOLIO_PIPELINE[activeStep].detail : hint}
           </span>
         </span>
       </div>
@@ -85,9 +104,50 @@ function LoadingState({
       {isPortfolio ? (
         <div className="relative overflow-hidden rounded-2xl border border-amber-200/15 bg-zinc-950/50 p-5 shadow-[0_20px_60px_-40px_rgba(251,191,36,0.35)] backdrop-blur-xl">
           <div className="mb-4 flex items-center justify-between text-[11px] tracking-[0.14em] text-zinc-500 uppercase">
-            <span>Vision Pipeline</span>
-            <span className="text-amber-200/70">FRAME SCAN</span>
+            <span>Dual-Engine Pipeline</span>
+            <span className="text-amber-200/70">
+              STAGE {activeStep + 1}/{PORTFOLIO_PIPELINE.length}
+            </span>
           </div>
+
+          <ol className="mb-5 space-y-2">
+            {PORTFOLIO_PIPELINE.map((step, index) => {
+              const done = index < activeStep;
+              const active = index === activeStep;
+              return (
+                <li
+                  key={step.id}
+                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 text-[12.5px] ${
+                    active
+                      ? "border-amber-200/25 bg-amber-100/[0.06] text-amber-50"
+                      : done
+                        ? "border-white/[0.06] bg-white/[0.02] text-zinc-400"
+                        : "border-white/[0.04] text-zinc-600"
+                  }`}
+                >
+                  <span
+                    className={`inline-flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-medium ${
+                      active
+                        ? "bg-amber-200/20 text-amber-100"
+                        : done
+                          ? "bg-emerald-400/15 text-emerald-300"
+                          : "bg-white/[0.04] text-zinc-600"
+                    }`}
+                  >
+                    {done ? "✓" : index + 1}
+                  </span>
+                  <span className="font-medium tracking-tight">{step.label}</span>
+                  {active && (
+                    <LoaderCircle
+                      className="ml-auto h-3.5 w-3.5 animate-spin text-amber-200/80"
+                      strokeWidth={1.75}
+                    />
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+
           <div className="grid grid-cols-6 gap-1.5">
             {Array.from({ length: 12 }).map((_, index) => (
               <motion.div
@@ -107,8 +167,8 @@ function LoadingState({
             ))}
           </div>
           <p className="mt-4 font-mono text-[11px] leading-relaxed text-zinc-500">
-            <span className="text-amber-200/80">$</span> multimodal.watch --frames
-            infinite --engine creative-director
+            <span className="text-amber-200/80">$</span> gemini.review | deepseek.star
+            --portfolio
           </p>
         </div>
       ) : (
@@ -128,12 +188,12 @@ function LoadingState({
 
 function ResultState({
   result,
-  isVip,
+  contentUnlocked,
   onUnlockRequest,
   onRegisterExport,
 }: {
   result: GenerateApiResponse;
-  isVip: boolean;
+  contentUnlocked: boolean;
   onUnlockRequest?: () => void;
   onRegisterExport?: (fn: (() => Promise<void>) | null) => void;
 }) {
@@ -151,7 +211,7 @@ function ResultState({
   }, []);
 
   const handleCopy = useCallback(async () => {
-    if (!isVip) {
+    if (!contentUnlocked) {
       onUnlockRequest?.();
       return;
     }
@@ -163,10 +223,10 @@ function ResultState({
     } catch {
       showToast("复制失败，请检查浏览器权限");
     }
-  }, [isVip, onUnlockRequest, result, showToast]);
+  }, [contentUnlocked, onUnlockRequest, result, showToast]);
 
   const handleDownloadPdf = useCallback(async () => {
-    if (!isVip) {
+    if (!contentUnlocked) {
       onUnlockRequest?.();
       return;
     }
@@ -200,7 +260,7 @@ function ResultState({
     } finally {
       setExporting(false);
     }
-  }, [exporting, isVip, onUnlockRequest, result.matchScore, showToast]);
+  }, [contentUnlocked, exporting, onUnlockRequest, result.matchScore, showToast]);
 
   useEffect(() => {
     onRegisterExport?.(handleDownloadPdf);
@@ -213,7 +273,7 @@ function ResultState({
 
   const firstBullet = resume.bullets[0];
   const lockedBullets = resume.bullets.slice(1);
-  const teaser = !isVip;
+  const teaser = !contentUnlocked;
 
   return (
     <motion.div
@@ -399,7 +459,8 @@ type OutputPanelProps = {
   error?: string | null;
   loadingHint?: string;
   loadingVariant?: "default" | "portfolio";
-  isVip?: boolean;
+  portfolioStep?: number;
+  contentUnlocked?: boolean;
   onDeepDiveSubmit?: (answers: string[]) => void;
   onDeepDiveSkip?: () => void;
   onUnlockRequest?: () => void;
@@ -412,7 +473,8 @@ export default function OutputPanel({
   error,
   loadingHint = "AI 正在对齐 JD 关键词...",
   loadingVariant = "default",
-  isVip = false,
+  portfolioStep = 0,
+  contentUnlocked = false,
   onDeepDiveSubmit,
   onDeepDiveSkip,
   onUnlockRequest,
@@ -436,7 +498,11 @@ export default function OutputPanel({
         <AnimatePresence mode="wait">
           {status === "idle" && <EmptyState error={error} />}
           {status === "loading" && (
-            <LoadingState hint={loadingHint} variant={loadingVariant} />
+            <LoadingState
+              hint={loadingHint}
+              variant={loadingVariant}
+              portfolioStep={portfolioStep}
+            />
           )}
           {status === "deepdive" && result && (
             <DeepDivePanel
@@ -451,7 +517,7 @@ export default function OutputPanel({
           {status === "result" && result && (
             <ResultState
               result={result}
-              isVip={isVip}
+              contentUnlocked={contentUnlocked}
               onUnlockRequest={onUnlockRequest}
               onRegisterExport={onRegisterExport}
             />
