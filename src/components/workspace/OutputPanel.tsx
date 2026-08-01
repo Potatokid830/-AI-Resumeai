@@ -11,7 +11,11 @@ import {
   Lock,
   Sparkles,
 } from "lucide-react";
-import type { GenerateApiResponse } from "@/lib/generateTypes";
+import type {
+  GenerateApiResponse,
+  ResumeSection,
+  ResumeSectionItem,
+} from "@/lib/generateTypes";
 import { buildResumePlainText } from "@/lib/resumePlainText";
 import AiInsights from "./AiInsights";
 import DeepDivePanel from "./DeepDivePanel";
@@ -19,6 +23,53 @@ import MarkHtml from "./MarkHtml";
 import MatchScore from "./MatchScore";
 import Toast from "./Toast";
 import type { WorkspaceStatus } from "./types";
+
+function isItemLocked(
+  sectionIndex: number,
+  itemIndex: number,
+  sections: ResumeSection[],
+  contentUnlocked: boolean,
+) {
+  if (contentUnlocked) return false;
+  if (sections.length > 1) return sectionIndex > 0;
+  const half = Math.ceil(sections[0].items.length / 2);
+  return itemIndex >= half;
+}
+
+function ResumeItemBlock({ item }: { item: ResumeSectionItem }) {
+  return (
+    <div className="space-y-3 rounded-xl border border-zinc-200/80 bg-white/60 p-4">
+      <div>
+        <p className="text-[11px] font-medium tracking-[0.12em] text-zinc-500 uppercase">
+          原文
+        </p>
+        <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-[1.55] text-zinc-600">
+          {item.original || "（无原文）"}
+        </p>
+      </div>
+      <div className="h-px bg-zinc-200/80" />
+      <div>
+        <p className="text-[11px] font-medium tracking-[0.12em] text-zinc-500 uppercase">
+          改写
+        </p>
+        <p className="mt-1.5 text-[14px] leading-[1.55] text-zinc-800">
+          {item.revisedHtml ? (
+            <MarkHtml html={item.revisedHtml} variant="light" />
+          ) : (
+            <span className="whitespace-pre-wrap">
+              {item.revised || "（无改写）"}
+            </span>
+          )}
+        </p>
+        {item.changeReason ? (
+          <p className="mt-2 text-[12px] leading-relaxed text-zinc-500">
+            {item.changeReason}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -197,7 +248,7 @@ function ResultState({
   onUnlockRequest?: () => void;
   onRegisterExport?: (fn: (() => Promise<void>) | null) => void;
 }) {
-  const resume = result.optimizedResume;
+  const sections = result.sections ?? [];
   const exportRef = useRef<HTMLElement>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -267,13 +318,15 @@ function ResultState({
     return () => onRegisterExport?.(null);
   }, [handleDownloadPdf, onRegisterExport]);
 
-  if (!resume) {
+  if (!sections.length) {
     return <EmptyState error="终版简历数据缺失，请重新生成" />;
   }
 
-  const firstBullet = resume.bullets[0];
-  const lockedBullets = resume.bullets.slice(1);
   const teaser = !contentUnlocked;
+  const hasLockedContent =
+    teaser &&
+    (sections.length > 1 ||
+      (sections.length === 1 && sections[0].items.length > 1));
 
   return (
     <motion.div
@@ -281,7 +334,6 @@ function ResultState({
       {...panelMotion}
       className="flex w-full max-w-5xl flex-col gap-4"
     >
-      {/* 清晰区：匹配分始终可见 */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -342,76 +394,49 @@ function ResultState({
               ref={exportRef}
               className="resume-a4-sheet rounded-2xl border border-zinc-200/80 p-7 shadow-[0_24px_80px_-48px_rgba(0,0,0,0.55)] sm:p-8"
             >
-              {resume.matchedKeywords.length > 0 && (
-                <div className="mb-5 flex flex-wrap items-center gap-2">
-                  {resume.matchedKeywords.map((keyword) => (
-                    <span
-                      key={keyword}
-                      className="rounded-full border border-amber-500/20 bg-amber-100/80 px-2.5 py-1 text-[11px] tracking-tight text-amber-950/90"
-                    >
-                      {keyword}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {result.targetRole ? (
+                <h2 className="text-xl font-semibold tracking-tight text-zinc-900">
+                  {result.targetRole}
+                </h2>
+              ) : null}
 
-              <h2 className="text-xl font-semibold tracking-tight text-zinc-900">
-                {resume.role}
-              </h2>
-              <p className="mt-1 text-sm text-zinc-500">{resume.company}</p>
-
-              <p className="mt-5 text-[14px] leading-[1.5] text-zinc-700">
-                <MarkHtml html={resume.summaryHtml} variant="light" />
-              </p>
-
-              <div className="mt-6 h-px bg-zinc-200" />
-
-              {/* 清晰区：第一段核心经历 */}
-              {firstBullet && (
-                <ul className="mt-6 space-y-5">
-                  <li className="flex gap-3">
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-[11px] font-semibold text-zinc-700">
-                      {firstBullet.letter}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-medium tracking-[0.14em] text-zinc-500 uppercase">
-                        {firstBullet.label}
-                      </p>
-                      <p className="mt-1.5 text-[14px] leading-[1.5] text-zinc-700">
-                        <MarkHtml html={firstBullet.html} variant="light" />
-                      </p>
-                    </div>
-                  </li>
-                </ul>
-              )}
-
-              {/* 打码区：后续 STAR 经历 */}
-              {lockedBullets.length > 0 && (
-                <ul
-                  className={`mt-5 space-y-5 ${
-                    teaser
-                      ? "pointer-events-none blur-md select-none opacity-60"
-                      : ""
-                  }`}
-                  aria-hidden={teaser}
-                >
-                  {lockedBullets.map((bullet) => (
-                    <li key={bullet.letter} className="flex gap-3">
-                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-[11px] font-semibold text-zinc-700">
-                        {bullet.letter}
+              <div className={result.targetRole ? "mt-6 space-y-8" : "space-y-8"}>
+                {sections.map((section, sectionIndex) => (
+                  <section key={section.id}>
+                    <div className="mb-3 flex items-baseline justify-between gap-3">
+                      <h3 className="text-[15px] font-semibold tracking-tight text-zinc-900">
+                        {section.title}
+                      </h3>
+                      <span className="text-[11px] tracking-[0.12em] text-zinc-400 uppercase">
+                        {section.type}
                       </span>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-medium tracking-[0.14em] text-zinc-500 uppercase">
-                          {bullet.label}
-                        </p>
-                        <p className="mt-1.5 text-[14px] leading-[1.5] text-zinc-700">
-                          <MarkHtml html={bullet.html} variant="light" />
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                    </div>
+                    <div className="space-y-4">
+                      {section.items.map((item, itemIndex) => {
+                        const locked = isItemLocked(
+                          sectionIndex,
+                          itemIndex,
+                          sections,
+                          contentUnlocked,
+                        );
+                        return (
+                          <div
+                            key={item.id}
+                            className={
+                              locked
+                                ? "pointer-events-none blur-md select-none opacity-60"
+                                : ""
+                            }
+                            aria-hidden={locked}
+                          >
+                            <ResumeItemBlock item={item} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
             </article>
           </motion.div>
 
@@ -430,7 +455,7 @@ function ResultState({
           </div>
         </div>
 
-        {teaser && (
+        {hasLockedContent && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4">
             <div
               aria-hidden
@@ -442,7 +467,7 @@ function ResultState({
               className="pointer-events-auto group relative inline-flex max-w-md items-center justify-center gap-2 rounded-full bg-zinc-50 px-5 py-3.5 text-center text-[13.5px] font-medium tracking-tight text-zinc-950 shadow-[0_0_0_1px_rgba(255,255,255,0.35),0_18px_50px_-12px_rgba(255,255,255,0.45)] transition-[transform,background-color] duration-300 hover:scale-[1.02] hover:bg-white active:scale-[0.985] sm:text-[14px]"
             >
               <Lock className="h-4 w-4 shrink-0" strokeWidth={1.85} aria-hidden />
-              解锁完整 STAR 法则解析与面试话术
+              解锁完整简历解析与面试话术
             </button>
           </div>
         )}
@@ -481,7 +506,7 @@ export default function OutputPanel({
   onRegisterExport,
 }: OutputPanelProps) {
   const showTopAligned =
-    (status === "result" && Boolean(result?.optimizedResume)) ||
+    (status === "result" && Boolean(result?.sections?.length)) ||
     (status === "deepdive" && Boolean(result));
 
   return (

@@ -1,28 +1,42 @@
-export type OptimizedResumeBullet = {
-  letter: "S" | "T" | "A" | "R";
-  label: string;
-  /** STAR 正文，对齐 JD 的关键词用 <mark> 包裹 */
-  html: string;
+export type ResumeSectionType =
+  | "experience"
+  | "education"
+  | "skills"
+  | "project"
+  | "other";
+
+export type ResumeItemStatus = "revised" | "unchanged" | "weak";
+
+export type ResumeRelevance = "high" | "medium" | "low";
+
+export type ResumeSectionItem = {
+  id: string;
+  original: string;
+  revised: string;
+  revisedHtml: string;
+  status: ResumeItemStatus;
+  changeReason: string;
+  relevanceToJd: ResumeRelevance;
+  deepDivePrompts: string[];
 };
 
-export type OptimizedResume = {
-  role: string;
-  company: string;
-  matchedKeywords: string[];
-  /** 摘要，对齐 JD 的关键词用 <mark> 包裹 */
-  summaryHtml: string;
-  bullets: OptimizedResumeBullet[];
+export type ResumeSection = {
+  id: string;
+  type: ResumeSectionType;
+  title: string;
+  items: ResumeSectionItem[];
 };
 
 export type GeneratePhase = "deepdive" | "result";
 
-/** /api/generate 的标准响应结构 */
+/** /api/generate 与作品集解析的标准响应结构 */
 export type GenerateApiResponse = {
   phase: GeneratePhase;
   matchScore: number;
   matchSubtitle: string;
-  /** 追问阶段可为 null；终版必填 */
-  optimizedResume: OptimizedResume | null;
+  targetRole: string;
+  /** 追问阶段为 null 或 []；终版为非空 sections */
+  sections: ResumeSection[] | null;
   gapAnalysis: string;
   interviewDefense: string;
   clarifyingQuestions: string[];

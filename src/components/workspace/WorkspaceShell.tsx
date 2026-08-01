@@ -53,9 +53,8 @@ function isGenerateApiResponse(data: unknown): data is GenerateApiResponse {
       typeof value.matchScore === "number" &&
       typeof value.gapAnalysis === "string" &&
       typeof value.interviewDefense === "string" &&
-      typeof value.optimizedResume === "object" &&
-      value.optimizedResume !== null &&
-      Array.isArray(value.optimizedResume.bullets)
+      Array.isArray(value.sections) &&
+      value.sections.length > 0
     );
   }
   return false;
@@ -80,7 +79,7 @@ export default function WorkspaceShell() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionRef = useRef<SessionPayload | null>(null);
   const exportHandlerRef = useRef<(() => Promise<void>) | null>(null);
-  const canExport = status === "result" && Boolean(result?.optimizedResume);
+  const canExport = status === "result" && Boolean(result?.sections?.length);
 
   const refreshUnlockState = useCallback(() => {
     setContentUnlocked(isContentUnlocked());

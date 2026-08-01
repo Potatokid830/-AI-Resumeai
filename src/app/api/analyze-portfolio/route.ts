@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import type { GenerateApiResponse } from "@/lib/generateTypes";
 import { extractMediaInsights } from "@/lib/extractMediaInsights";
 import { PORTFOLIO_STAR_SYSTEM } from "@/lib/prompts";
+import {
+  isValidFinalSections,
+  normalizeGenerateResponse,
+} from "@/lib/resumeSchema";
 
 export const runtime = "nodejs";
 /** 视频需经 Gemini Files 处理，适当放宽超时 */
@@ -34,31 +38,13 @@ function extractJsonPayload(content: string): unknown {
 }
 
 function isValidResult(data: unknown): data is GenerateApiResponse {
-  if (!data || typeof data !== "object") return false;
-  const value = data as GenerateApiResponse;
-  return (
-    typeof value.matchScore === "number" &&
-    typeof value.gapAnalysis === "string" &&
-    typeof value.interviewDefense === "string" &&
-    typeof value.optimizedResume === "object" &&
-    value.optimizedResume !== null &&
-    Array.isArray(value.optimizedResume.bullets)
-  );
+  return isValidFinalSections(data);
 }
 
 function normalizeResult(data: GenerateApiResponse): GenerateApiResponse {
-  return {
-    ...data,
-    phase: "result",
-    matchScore: Math.min(100, Math.max(0, Math.round(data.matchScore))),
-    matchSubtitle:
-      typeof data.matchSubtitle === "string" && data.matchSubtitle.trim()
-        ? data.matchSubtitle
-        : "作品集视觉解析完成 · 解锁查看完整 STAR",
-    clarifyingQuestions: [],
-    interviewDefense: data.interviewDefense || "",
-    optimizedResume: data.optimizedResume,
-  };
+  return normalizeGenerateResponse(data, "result", {
+    matchSubtitle: "作品集视觉解析完成 · 解锁查看完整 STAR",
+  });
 }
 
 export async function POST(request: Request) {

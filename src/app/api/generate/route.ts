@@ -13,6 +13,10 @@ import {
   SYSTEM_PROMPT_DEEPDIVE,
   SYSTEM_PROMPT_FINAL,
 } from "@/lib/prompts";
+import {
+  isValidFinalSections,
+  normalizeGenerateResponse,
+} from "@/lib/resumeSchema";
 
 export const runtime = "nodejs";
 
@@ -120,38 +124,14 @@ function isValidDeepDive(data: unknown): data is GenerateApiResponse {
 function isValidFinal(data: unknown): data is GenerateApiResponse {
   if (!data || typeof data !== "object") return false;
   const value = data as GenerateApiResponse;
-  return (
-    value.phase === "result" &&
-    typeof value.matchScore === "number" &&
-    typeof value.gapAnalysis === "string" &&
-    typeof value.interviewDefense === "string" &&
-    typeof value.optimizedResume === "object" &&
-    value.optimizedResume !== null &&
-    Array.isArray(value.optimizedResume.bullets)
-  );
+  return value.phase === "result" && isValidFinalSections(data);
 }
 
 function normalizeResponse(
   data: GenerateApiResponse,
   phase: GeneratePhase,
 ): GenerateApiResponse {
-  return {
-    ...data,
-    phase,
-    matchSubtitle:
-      typeof data.matchSubtitle === "string" && data.matchSubtitle.trim()
-        ? data.matchSubtitle
-        : phase === "deepdive"
-          ? "仍有关键细节待补充"
-          : "已完成 JD 对齐分析",
-    matchScore: Math.min(100, Math.max(0, Math.round(data.matchScore))),
-    clarifyingQuestions: Array.isArray(data.clarifyingQuestions)
-      ? data.clarifyingQuestions.filter(Boolean).slice(0, 3)
-      : [],
-    interviewDefense:
-      typeof data.interviewDefense === "string" ? data.interviewDefense : "",
-    optimizedResume: phase === "result" ? data.optimizedResume : null,
-  };
+  return normalizeGenerateResponse(data, phase);
 }
 
 type AssetUrlRef = {
