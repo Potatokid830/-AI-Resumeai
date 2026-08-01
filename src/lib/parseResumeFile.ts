@@ -1,5 +1,5 @@
 import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
+import { extractText, getDocumentProxy } from "unpdf";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -14,6 +14,13 @@ export type ParseResumeResult =
 function getExtension(name: string) {
   const match = name.toLowerCase().match(/(\.[a-z0-9]+)$/);
   return match?.[1] ?? "";
+}
+
+async function extractPdfText(buffer: Buffer): Promise<string> {
+  // unpdf：Serverless / Node 友好，不依赖 DOMMatrix
+  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const { text } = await extractText(pdf, { mergePages: true });
+  return (text ?? "").trim();
 }
 
 export async function parseResumeFile(
@@ -35,20 +42,14 @@ export async function parseResumeFile(
     const buffer = Buffer.from(await file.arrayBuffer());
 
     if (mime === "application/pdf" || extension === ".pdf") {
-      const parser = new PDFParse({ data: new Uint8Array(buffer) });
-      try {
-        const result = await parser.getText();
-        const text = result.text?.trim() ?? "";
-        if (!text) {
-          return {
-            ok: false,
-            error: "未能从 PDF 中提取文字，文件可能是扫描件或已损坏",
-          };
-        }
-        return { ok: true, text, fileName };
-      } finally {
-        await parser.destroy().catch(() => undefined);
+      const text = await extractPdfText(buffer);
+      if (!text) {
+        return {
+          ok: false,
+          error: "未能从 PDF 中提取文字，文件可能是扫描件或已损坏",
+        };
       }
+      return { ok: true, text, fileName };
     }
 
     if (mime === DOCX_MIME || extension === ".docx") {

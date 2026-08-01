@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "mammoth"],
+  // mammoth 含原生/大体积依赖，保持外置；PDF 改用 unpdf（Serverless 友好）
+  serverExternalPackages: ["mammoth", "unpdf"],
 };
 
 export default nextConfig;
