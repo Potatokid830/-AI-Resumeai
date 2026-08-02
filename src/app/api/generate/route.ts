@@ -21,6 +21,7 @@ import { ensureMathSumPrecise } from "@/lib/polyfills/mathSumPrecise";
 import {
   PORTFOLIO_STAR_SYSTEM,
   PROMPT_ENHANCE_WITH_PORTFOLIO,
+  PROMPT_PORTFOLIO_FROM_RAW_DOCUMENT,
   SYSTEM_PROMPT_DEEPDIVE,
   SYSTEM_PROMPT_FINAL,
 } from "@/lib/prompts";
@@ -329,11 +330,23 @@ async function buildPortfolioSectionsFromNewAssets(
   const tPhase = Date.now();
   for (const asset of toProcess) {
     const tAsset = Date.now();
+    const isRawDocument = asset.engine === "document-raw";
     try {
+      // 文档类：原文一次成卡（不再先 distill）；视觉类：仍用已有洞察
+      if (
+        asset.engine === "error" ||
+        asset.engine === "document-empty" ||
+        asset.engine === "unsupported" ||
+        !asset.insight.trim()
+      ) {
+        warnings.push(`作品《${asset.fileName}》处理失败，可重试`);
+        continue;
+      }
+
       const tDs = Date.now();
       const completion = await deepseekChatCompletion(
         openai,
-        `portfolio-new:${asset.fileName}`,
+        `portfolio-new-one-shot:${asset.fileName}`,
         {
           temperature: 0.45,
           max_tokens: DEEPSEEK_LARGE_MAX_TOKENS,
@@ -343,7 +356,7 @@ async function buildPortfolioSectionsFromNewAssets(
             { role: "system", content: PORTFOLIO_STAR_SYSTEM },
             {
               role: "user",
-              content: `请将作品集洞察重写为 STAR 项目经历 JSON（sections/items）。original 可空。
+              content: `${isRawDocument ? `${PROMPT_PORTFOLIO_FROM_RAW_DOCUMENT}\n\n` : ""}请输出 STAR 项目经历 JSON（sections/items）。original 可空。
 
 ## 目标岗位 JD
 ${jdText || "（未提供）"}
@@ -353,9 +366,9 @@ ${userNotes || "（无）"}
 
 ## 文件信息
 - 文件名：${asset.fileName}
-- 视觉引擎：${asset.engine}
+- 引擎：${asset.engine}
 
-## 作品洞察
+## ${isRawDocument ? "作品原文（已截断至提炼输入上限，请直接据此成卡）" : "作品洞察"}
 ${asset.insight}
 `,
             },
@@ -363,7 +376,7 @@ ${asset.insight}
         },
       );
       console.log(
-        `[timing][generate] deepseek portfolio-new file=${asset.fileName} ms=${Date.now() - tDs}`,
+        `[timing][generate] deepseek portfolio-new-one-shot file=${asset.fileName} engine=${asset.engine} ms=${Date.now() - tDs}`,
       );
 
       const content = completion.choices[0]?.message?.content;
@@ -503,20 +516,26 @@ export async function POST(request: Request) {
     const tAssets = Date.now();
     for (const binding of bindingsToProcess) {
       const tOne = Date.now();
+      const treatAsNew =
+        binding.bindTo === "new" || !snapshotIds.has(binding.bindTo);
+
+      // 新项目：跳过 distill，留给 portfolio-new-one-shot 一次成卡
+      // 增强：仍先 distill 再并进主改写
       const insight = await readAssetInsight({
         assetId: binding.assetId,
         fileName: binding.name,
         url: binding.url,
         userNotes,
+        distill: !treatAsNew,
       });
       if (typeof insight.distillMs === "number") {
         distillMsTotal += insight.distillMs;
       }
       console.log(
-        `[timing][generate] readAssetInsight bindTo=${binding.bindTo} file=${binding.name} engine=${insight.engine} ms=${Date.now() - tOne} distillMs=${insight.distillMs ?? 0}`,
+        `[timing][generate] readAssetInsight bindTo=${binding.bindTo} file=${binding.name} engine=${insight.engine} distill=${!treatAsNew} ms=${Date.now() - tOne} distillMs=${insight.distillMs ?? 0}`,
       );
 
-      if (binding.bindTo === "new" || !snapshotIds.has(binding.bindTo)) {
+      if (treatAsNew) {
         if (binding.bindTo !== "new" && !snapshotIds.has(binding.bindTo)) {
           console.warn(
             "[generate] bindTo 不在 snapshot 中，降级为 new",

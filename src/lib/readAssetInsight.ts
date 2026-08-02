@@ -1,4 +1,7 @@
-import { distillDocumentToCoreFacts } from "@/lib/distillDocumentInsight";
+import {
+  DISTILL_INPUT_MAX_CHARS,
+  distillDocumentToCoreFacts,
+} from "@/lib/distillDocumentInsight";
 import { extractMediaInsights } from "@/lib/extractMediaInsights";
 import {
   isTextExtractable,
@@ -11,7 +14,7 @@ export type AssetInsight = {
   url: string;
   insight: string;
   engine: string;
-  /** 文档提炼 DeepSeek 耗时（视觉类无此字段） */
+  /** 文档提炼 DeepSeek 耗时（视觉类 / raw 无此字段） */
   distillMs?: number;
 };
 
@@ -33,7 +36,8 @@ function getExtension(name: string) {
 
 /**
  * 按扩展名读作品内容（代码分流，不靠 AI 选引擎）。
- * - 可抽文字 → 先 DeepSeek 提炼核心事实，再给主改写
+ * - 可抽文字 + distill=true（增强路径）→ DeepSeek 提炼核心事实
+ * - 可抽文字 + distill=false（新项目路径）→ 仅返回原文截断，留给一次 portfolio 调用
  * - 视频/图片 → Gemini extractMediaInsights
  */
 export async function readAssetInsight(options: {
@@ -41,8 +45,16 @@ export async function readAssetInsight(options: {
   fileName: string;
   url: string;
   userNotes?: string;
+  /** 默认 true。新项目应传 false，省掉与 portfolio-new 重复的 distill */
+  distill?: boolean;
 }): Promise<AssetInsight> {
-  const { assetId, fileName, url, userNotes = "" } = options;
+  const {
+    assetId,
+    fileName,
+    url,
+    userNotes = "",
+    distill = true,
+  } = options;
   const ext = getExtension(fileName);
   const t0 = Date.now();
 
@@ -79,6 +91,20 @@ export async function readAssetInsight(options: {
     try {
       const parsed = await parseDocumentFromUrl(url, fileName);
       if (parsed.ok && parsed.text.trim()) {
+        if (!distill) {
+          const raw = parsed.text.replace(/\s+/g, " ").trim().slice(0, DISTILL_INPUT_MAX_CHARS);
+          console.log(
+            `[timing] readAssetInsight DOC-RAW file=${fileName} engine=document-raw chars=${raw.length} ms=${Date.now() - t0}`,
+          );
+          return {
+            assetId,
+            fileName,
+            url,
+            insight: raw,
+            engine: "document-raw",
+          };
+        }
+
         const distilled = await distillDocumentToCoreFacts({
           rawText: parsed.text,
           fileName,

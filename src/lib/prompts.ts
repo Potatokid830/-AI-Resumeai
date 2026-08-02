@@ -160,6 +160,20 @@ export const PORTFOLIO_STAR_SYSTEM = `${SYSTEM_PROMPT_HR_CORE}
 ${PORTFOLIO_STAR_TAIL}`;
 
 /**
+ * 「新项目」文档直出：一次调用从原文抽出事实并写成 portfolio 经历卡。
+ * 附加在 user 消息前；与 PORTFOLIO_STAR_SYSTEM 共用输出 schema。
+ */
+export const PROMPT_PORTFOLIO_FROM_RAW_DOCUMENT = `【新项目 · 原文一次成卡】
+你将直接看到作品文档原文(可能已截断),而不是事先摘要。
+请在同一次回答中完成:
+1. 只抽取原文里真实存在的硬事实(数据、策略、方法、结果、角色边界);
+2. 写成可投递的 STAR 项目经历 JSON(sections/items)。
+红线:
+- 原文没有的事实、数据、结果一律不编造、不注水。
+- 去掉营销话术与重复铺垫;模糊约数保持模糊,不替用户算出百分比。
+- original 可写空字符串 "";服务端会盖上来源标签。`;
+
+/**
  * 作品增强已有经历（附加在终版 user 中有作品洞察的经历块上）。
  * 不改动 HR_CORE / 终版尾巴正文。
  */
