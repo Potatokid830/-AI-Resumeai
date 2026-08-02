@@ -1,3 +1,4 @@
+import { distillDocumentToCoreFacts } from "@/lib/distillDocumentInsight";
 import { extractMediaInsights } from "@/lib/extractMediaInsights";
 import {
   isTextExtractable,
@@ -10,6 +11,8 @@ export type AssetInsight = {
   url: string;
   insight: string;
   engine: string;
+  /** 文档提炼 DeepSeek 耗时（视觉类无此字段） */
+  distillMs?: number;
 };
 
 const VISION_EXTENSIONS = new Set([
@@ -30,7 +33,7 @@ function getExtension(name: string) {
 
 /**
  * 按扩展名读作品内容（代码分流，不靠 AI 选引擎）。
- * - 可抽文字 → DeepSeek 侧用的纯文本摘录
+ * - 可抽文字 → 先 DeepSeek 提炼核心事实，再给主改写
  * - 视频/图片 → Gemini extractMediaInsights
  */
 export async function readAssetInsight(options: {
@@ -76,16 +79,21 @@ export async function readAssetInsight(options: {
     try {
       const parsed = await parseDocumentFromUrl(url, fileName);
       if (parsed.ok && parsed.text.trim()) {
-        const text = parsed.text.replace(/\s+/g, " ").trim().slice(0, 8_000);
+        const distilled = await distillDocumentToCoreFacts({
+          rawText: parsed.text,
+          fileName,
+          userNotes,
+        });
         console.log(
-          `[timing] readAssetInsight DOC file=${fileName} engine=document-text chars=${text.length} ms=${Date.now() - t0}`,
+          `[timing] readAssetInsight DOC file=${fileName} engine=${distilled.engine} chars=${distilled.insight.length} distillMs=${distilled.distillMs} totalMs=${Date.now() - t0}`,
         );
         return {
           assetId,
           fileName,
           url,
-          insight: text,
-          engine: "document-text",
+          insight: distilled.insight,
+          engine: distilled.engine,
+          distillMs: distilled.distillMs,
         };
       }
       console.log(

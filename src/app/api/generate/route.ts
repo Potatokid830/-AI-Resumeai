@@ -488,6 +488,7 @@ export async function POST(request: Request) {
   const newAssets: AssetInsight[] = [];
   const enhancedByMap: Record<string, string[]> = {};
   const processingWarnings: string[] = [];
+  let distillMsTotal = 0;
 
   if (isFinal && assetBindings.length > 0) {
     const snapshotIds = new Set(experiencesSnapshot.map((e) => e.id));
@@ -508,8 +509,11 @@ export async function POST(request: Request) {
         url: binding.url,
         userNotes,
       });
+      if (typeof insight.distillMs === "number") {
+        distillMsTotal += insight.distillMs;
+      }
       console.log(
-        `[timing][generate] readAssetInsight bindTo=${binding.bindTo} file=${binding.name} engine=${insight.engine} ms=${Date.now() - tOne}`,
+        `[timing][generate] readAssetInsight bindTo=${binding.bindTo} file=${binding.name} engine=${insight.engine} ms=${Date.now() - tOne} distillMs=${insight.distillMs ?? 0}`,
       );
 
       if (binding.bindTo === "new" || !snapshotIds.has(binding.bindTo)) {
@@ -534,7 +538,7 @@ export async function POST(request: Request) {
       enhancedByMap[binding.bindTo] = names;
     }
     console.log(
-      `[timing][generate] readAllAssetInsights count=${bindingsToProcess.length} enhanceExps=${enhanceMap.size} newAssets=${newAssets.length} ms=${Date.now() - tAssets}`,
+      `[timing][generate] readAllAssetInsights count=${bindingsToProcess.length} enhanceExps=${enhanceMap.size} newAssets=${newAssets.length} ms=${Date.now() - tAssets} distillMsTotal=${distillMsTotal}`,
     );
   }
 
@@ -573,8 +577,12 @@ export async function POST(request: Request) {
         },
       ],
     });
+    const mainMs = Date.now() - tDeepseek;
     console.log(
-      `[timing][generate] deepseek main phase=${phase} useSnapshot=${useSnapshotFinal} ms=${Date.now() - tDeepseek}`,
+      `[timing][generate] deepseek main phase=${phase} useSnapshot=${useSnapshotFinal} ms=${mainMs}`,
+    );
+    console.log(
+      `[timing][generate] distill+main distillMs=${distillMsTotal} mainMs=${mainMs} sumMs=${distillMsTotal + mainMs}`,
     );
 
     const content = completion.choices[0]?.message?.content;
