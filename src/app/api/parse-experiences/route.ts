@@ -10,6 +10,11 @@ import type {
 } from "@/lib/generateTypes";
 import { parseDocumentFromUrl } from "@/lib/parseDocument";
 import { SYSTEM_PROMPT_PARSE_EXPERIENCES } from "@/lib/prompts";
+import {
+  extractContactHeuristics,
+  mergeContact,
+  normalizeContact,
+} from "@/lib/resumeContact";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -168,12 +173,29 @@ ${resumeText.slice(0, 40_000)}
       );
     }
 
+    const fromModel = normalizeContact(
+      payload && typeof payload === "object"
+        ? (payload as { contact?: unknown }).contact
+        : undefined,
+    );
+    const contact = mergeContact(
+      fromModel,
+      extractContactHeuristics(resumeText),
+    );
+
     console.log(
       "[parse-experiences]",
       experiences.map((item) => ({ id: item.id, title: item.title })),
+      {
+        contact: {
+          name: Boolean(contact.name),
+          phone: Boolean(contact.phone),
+          email: Boolean(contact.email),
+        },
+      },
     );
 
-    const response: ParseExperiencesResponse = { experiences };
+    const response: ParseExperiencesResponse = { experiences, contact };
     return NextResponse.json(response);
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";

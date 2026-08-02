@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
@@ -17,10 +18,16 @@ import type {
   ResumeSectionItem,
 } from "@/lib/generateTypes";
 import { buildResumePlainText } from "@/lib/resumePlainText";
+import {
+  normalizeContact,
+  type ResumeContact,
+} from "@/lib/resumeContact";
 import AiInsights from "./AiInsights";
 import DeepDivePanel from "./DeepDivePanel";
+import ExportResumeModal from "./ExportResumeModal";
 import MarkHtml from "./MarkHtml";
 import MatchScore from "./MatchScore";
+import PrintableResume from "./PrintableResume";
 import Toast from "./Toast";
 import type { WorkspaceStatus } from "./types";
 
@@ -473,21 +480,73 @@ function LoadingState({
   );
 }
 
+async function exportPrintablePdf(
+  result: GenerateApiResponse,
+  contact: ResumeContact,
+) {
+  const host = document.createElement("div");
+  host.setAttribute("aria-hidden", "true");
+  host.style.position = "fixed";
+  host.style.left = "-10000px";
+  host.style.top = "0";
+  host.style.width = "210mm";
+  host.style.background = "#ffffff";
+  host.style.pointerEvents = "none";
+  document.body.appendChild(host);
+
+  const root = createRoot(host);
+  try {
+    await new Promise<void>((resolve) => {
+      root.render(<PrintableResume result={result} contact={contact} />);
+      // 等布局两帧，避免 html2canvas 抓到空节点
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+
+    const sheet = host.querySelector(".printable-resume-sheet");
+    if (!(sheet instanceof HTMLElement)) {
+      throw new Error("成品简历节点未就绪");
+    }
+
+    const html2pdf = (await import("html2pdf.js")).default;
+    await html2pdf()
+      .set({
+        margin: [8, 8, 8, 8],
+        filename: "简历_投递版.pdf",
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+        },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      })
+      .from(sheet)
+      .save();
+  } finally {
+    root.unmount();
+    host.remove();
+  }
+}
+
 function ResultState({
   result,
   contentUnlocked,
   onUnlockRequest,
   onRegisterExport,
+  onContactUpdate,
 }: {
   result: GenerateApiResponse;
   contentUnlocked: boolean;
   onUnlockRequest?: () => void;
   onRegisterExport?: (fn: (() => Promise<void>) | null) => void;
+  onContactUpdate?: (contact: ResumeContact) => void;
 }) {
   const sections = result.sections ?? [];
-  const exportRef = useRef<HTMLElement>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -512,47 +571,37 @@ function ResultState({
     }
   }, [contentUnlocked, onUnlockRequest, result, showToast]);
 
-  const handleDownloadPdf = useCallback(async () => {
+  const openExportFlow = useCallback(async () => {
     if (!contentUnlocked) {
       onUnlockRequest?.();
       return;
     }
+    if (exporting) return;
+    setExportModalOpen(true);
+  }, [contentUnlocked, exporting, onUnlockRequest]);
 
-    const element = exportRef.current;
-    if (!element || exporting) return;
-
-    setExporting(true);
-    try {
-      const html2pdf = (await import("html2pdf.js")).default;
-      const filename = `优化简历_MatchScore_${result.matchScore}.pdf`;
-
-      await html2pdf()
-        .set({
-          margin: [10, 10, 10, 10],
-          filename,
-          image: { type: "jpeg", quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: "#ffffff",
-          },
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        })
-        .from(element)
-        .save();
-
-      showToast("PDF 已开始下载");
-    } catch {
-      showToast("PDF 导出失败，请重试");
-    } finally {
-      setExporting(false);
-    }
-  }, [contentUnlocked, exporting, onUnlockRequest, result.matchScore, showToast]);
+  const handleConfirmExport = useCallback(
+    async (contact: ResumeContact) => {
+      const normalized = normalizeContact(contact);
+      onContactUpdate?.(normalized);
+      setExportModalOpen(false);
+      setExporting(true);
+      try {
+        await exportPrintablePdf(result, normalized);
+        showToast("成品简历 PDF 已开始下载");
+      } catch {
+        showToast("PDF 导出失败，请重试");
+      } finally {
+        setExporting(false);
+      }
+    },
+    [onContactUpdate, result, showToast],
+  );
 
   useEffect(() => {
-    onRegisterExport?.(handleDownloadPdf);
+    onRegisterExport?.(openExportFlow);
     return () => onRegisterExport?.(null);
-  }, [handleDownloadPdf, onRegisterExport]);
+  }, [openExportFlow, onRegisterExport]);
 
   if (!sections.length) {
     return <EmptyState error="终版简历数据缺失，请重新生成" />;
@@ -615,7 +664,7 @@ function ResultState({
 
         <button
           type="button"
-          onClick={handleDownloadPdf}
+          onClick={openExportFlow}
           disabled={exporting}
           className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-zinc-50 px-3 py-1.5 text-[12px] font-medium text-zinc-950 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
         >
@@ -627,9 +676,18 @@ function ResultState({
           ) : (
             <FileDown className="h-3.5 w-3.5" strokeWidth={1.75} />
           )}
-          {exporting ? "导出中..." : "下载 A4 PDF"}
+          {exporting ? "导出中..." : "导出成品简历"}
         </button>
       </div>
+
+      <ExportResumeModal
+        open={exportModalOpen}
+        initialContact={normalizeContact(result.contact ?? {})}
+        onClose={() => setExportModalOpen(false)}
+        onConfirmExport={(contact) => {
+          void handleConfirmExport(contact);
+        }}
+      />
 
       <div className="relative">
         <div className="flex flex-col items-stretch gap-4 lg:flex-row lg:items-start">
@@ -641,7 +699,6 @@ function ResultState({
           >
             <article
               id="resume-export-container"
-              ref={exportRef}
               className="resume-a4-sheet rounded-2xl border border-zinc-200/80 p-7 shadow-[0_24px_80px_-48px_rgba(0,0,0,0.55)] sm:p-8"
             >
               {result.targetRole ? (
@@ -744,6 +801,7 @@ type OutputPanelProps = {
   onDeepDiveSkip?: () => void;
   onUnlockRequest?: () => void;
   onRegisterExport?: (fn: (() => Promise<void>) | null) => void;
+  onContactUpdate?: (contact: ResumeContact) => void;
 };
 
 export default function OutputPanel({
@@ -760,6 +818,7 @@ export default function OutputPanel({
   onDeepDiveSkip,
   onUnlockRequest,
   onRegisterExport,
+  onContactUpdate,
 }: OutputPanelProps) {
   const prevStatusRef = useRef(status);
   const [exitFlash, setExitFlash] = useState(false);
@@ -821,6 +880,7 @@ export default function OutputPanel({
               contentUnlocked={contentUnlocked}
               onUnlockRequest={onUnlockRequest}
               onRegisterExport={onRegisterExport}
+              onContactUpdate={onContactUpdate}
             />
           )}
         </AnimatePresence>

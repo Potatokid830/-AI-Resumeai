@@ -6,7 +6,9 @@ import { FileDown } from "lucide-react";
 import type {
   ClarifyingAnswer,
   GenerateApiResponse,
+  ResumeContact,
 } from "@/lib/generateTypes";
+import { mergeContact, normalizeContact } from "@/lib/resumeContact";
 import {
   VIP_DAILY_CAP_MESSAGE,
   checkGenerationAccess,
@@ -36,6 +38,7 @@ type SessionPayload = {
   userNotes: string;
   experiencesSnapshot: GeneratePayload["experiencesSnapshot"];
   assetBindings: GeneratePayload["assetBindings"];
+  contact: ResumeContact;
   questions: string[];
 };
 
@@ -173,6 +176,7 @@ export default function WorkspaceShell() {
             clarifyingAnswers: options.clarifyingAnswers ?? [],
             assetBindings: options.payload.assetBindings ?? [],
             experiencesSnapshot: options.payload.experiencesSnapshot ?? [],
+            contact: options.payload.contact ?? {},
           }),
         });
 
@@ -275,6 +279,9 @@ export default function WorkspaceShell() {
           matchSubtitle:
             data.matchSubtitle?.trim() ||
             "作品集视觉解析完成 · 解锁查看完整 STAR",
+          contact: normalizeContact(
+            mergeContact(data.contact, payload.contact),
+          ),
         });
         setStatus("result");
         refreshUnlockState();
@@ -333,11 +340,17 @@ export default function WorkspaceShell() {
             userNotes: payload.userNotes,
             experiencesSnapshot: payload.experiencesSnapshot,
             assetBindings: payload.assetBindings,
+            contact: normalizeContact(
+              mergeContact(data.contact, payload.contact),
+            ),
             questions: data.clarifyingQuestions,
           };
 
           setResult({
             ...data,
+            contact: normalizeContact(
+              mergeContact(data.contact, payload.contact),
+            ),
             matchSubtitle: data.matchSubtitle?.trim() || "仍有关键细节待补充",
           });
           setStatus("deepdive");
@@ -357,6 +370,9 @@ export default function WorkspaceShell() {
 
         setResult({
           ...data,
+          contact: normalizeContact(
+            mergeContact(data.contact, payload.contact),
+          ),
           matchSubtitle:
             data.matchSubtitle?.trim() || "基础版已生成 · 解锁查看完整解析",
         });
@@ -411,6 +427,7 @@ export default function WorkspaceShell() {
             userNotes: session.userNotes,
             experiencesSnapshot: session.experiencesSnapshot,
             assetBindings: session.assetBindings,
+            contact: session.contact,
           },
           isFinal: true,
           clarifyingAnswers,
@@ -421,6 +438,9 @@ export default function WorkspaceShell() {
 
         setResult({
           ...data,
+          contact: normalizeContact(
+            mergeContact(data.contact, session.contact),
+          ),
           matchSubtitle: data.matchSubtitle?.trim() || "已完成 JD 对齐分析",
         });
         setStatus("result");
@@ -510,7 +530,7 @@ export default function WorkspaceShell() {
             !canExport
               ? "生成结果后可导出"
               : contentUnlocked
-                ? "导出 PDF"
+                ? "导出成品简历"
                 : "解锁后可导出"
           }
           onClick={handleNavExport}
@@ -521,7 +541,7 @@ export default function WorkspaceShell() {
           }`}
         >
           <FileDown className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
-          导出 PDF
+          导出成品简历
         </button>
       </header>
 
@@ -546,6 +566,17 @@ export default function WorkspaceShell() {
           onDeepDiveSkip={handleDeepDiveSkip}
           onUnlockRequest={openPaywall}
           onRegisterExport={handleRegisterExport}
+          onContactUpdate={(contact) => {
+            setResult((prev) =>
+              prev ? { ...prev, contact: normalizeContact(contact) } : prev,
+            );
+            if (sessionRef.current) {
+              sessionRef.current = {
+                ...sessionRef.current,
+                contact: normalizeContact(contact),
+              };
+            }
+          }}
         />
       </main>
 

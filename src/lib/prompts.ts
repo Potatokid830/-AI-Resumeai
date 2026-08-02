@@ -238,9 +238,17 @@ export const SYSTEM_PROMPT_PARSE_EXPERIENCES = `你是简历切段助手。任�
 4. type 只能是 experience / project / other(不要用 education;教育背景应直接排除)。
 5. 不要输出 id 字段(服务端会按顺序生成)。
 6. 不要编造简历里没有的经历;也不要把排除类内容硬塞进列表。
+7. 同时从简历页眉/个人信息区抽取 contact(姓名、电话、邮箱、城市、LinkedIn)。原文没有的字段必须填空字符串 "",绝对禁止编造或填占位符。
 
 只返回合法 JSON(不要 Markdown):
 {
+  "contact": {
+    "name": string,
+    "phone": string,
+    "email": string,
+    "city": string,
+    "linkedIn": string
+  },
   "experiences": [
     {
       "title": string,

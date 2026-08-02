@@ -9,6 +9,7 @@ import type {
   ResumeSectionItem,
   ResumeSectionType,
 } from "@/lib/generateTypes";
+import { normalizeContact } from "@/lib/resumeContact";
 
 const SECTION_TYPES: ResumeSectionType[] = [
   "experience",
@@ -237,6 +238,11 @@ export function normalizeGenerateResponse(
           (w): w is string => typeof w === "string" && w.trim().length > 0,
         )
       : undefined,
+    contact: (() => {
+      if (!data.contact || typeof data.contact !== "object") return undefined;
+      const c = normalizeContact(data.contact);
+      return Object.keys(c).length ? c : undefined;
+    })(),
   };
 }
 

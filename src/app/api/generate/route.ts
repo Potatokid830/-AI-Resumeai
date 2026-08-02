@@ -11,6 +11,7 @@ import type {
   GenerateApiResponse,
   GeneratePhase,
   ParsedExperience,
+  ResumeContact,
   ResumeSection,
 } from "@/lib/generateTypes";
 import {
@@ -18,6 +19,11 @@ import {
   parseDocumentFromUrl,
 } from "@/lib/parseDocument";
 import { ensureMathSumPrecise } from "@/lib/polyfills/mathSumPrecise";
+import {
+  extractContactHeuristics,
+  mergeContact,
+  normalizeContact,
+} from "@/lib/resumeContact";
 import {
   PORTFOLIO_STAR_SYSTEM,
   PROMPT_ENHANCE_WITH_PORTFOLIO,
@@ -275,6 +281,7 @@ type GenerateRequestBody = {
   clarifyingAnswers?: ClarifyingAnswer[] | string;
   assetBindings?: AssetBinding[];
   experiencesSnapshot?: ParsedExperience[];
+  contact?: ResumeContact;
 };
 
 async function enrichExperienceFromAssets(
@@ -459,6 +466,7 @@ export async function POST(request: Request) {
   const assetBindings = parseAssetBindings(body.assetBindings);
   const experiencesSnapshot = parseExperiencesSnapshot(body.experiencesSnapshot);
   const userNotes = String(body.userNotes ?? "").slice(0, 2_000);
+  const contactFromClient = normalizeContact(body.contact);
 
   console.log(
     `[timing][generate] START isFinal=${isFinal} resumeUrl=${Boolean(resumeUrl)} assetBindings=${assetBindings.length} assetUrls=${assetUrls.length} snapshot=${experiencesSnapshot.length}`,
@@ -486,6 +494,12 @@ export async function POST(request: Request) {
     // 素材提取失败不阻断主流程
   }
 
+  // 客户端传入优先；缺的用简历原文正则兜底（不编造姓名）
+  const resolvedContact = mergeContact(
+    contactFromClient,
+    resumeText ? extractContactHeuristics(resumeText) : {},
+  );
+
   const openai = getDeepSeekClient();
   if (!openai) {
     return NextResponse.json(
@@ -495,6 +509,11 @@ export async function POST(request: Request) {
   }
 
   const phase: GeneratePhase = isFinal ? "result" : "deepdive";
+  const withContact = <T extends GenerateApiResponse>(result: T): T => ({
+    ...result,
+    contact:
+      Object.keys(resolvedContact).length > 0 ? resolvedContact : result.contact,
+  });
 
   // —— 终版：按 assetBindings 读作品并分组（增强 / 新增）——
   const enhanceMap = new Map<string, AssetInsight[]>();
@@ -674,7 +693,7 @@ export async function POST(request: Request) {
       console.log(
         `[timing][generate] END success phase=result totalMs=${Date.now() - tRequest}`,
       );
-      return NextResponse.json(result);
+      return NextResponse.json(withContact(result));
     }
 
     if (!isValidDeepDive(parsed)) {
@@ -690,7 +709,9 @@ export async function POST(request: Request) {
     console.log(
       `[timing][generate] END success phase=deepdive totalMs=${Date.now() - tRequest}`,
     );
-    return NextResponse.json(normalizeResponse(parsed, "deepdive"));
+    return NextResponse.json(
+      withContact(normalizeResponse(parsed, "deepdive")),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
     console.log(

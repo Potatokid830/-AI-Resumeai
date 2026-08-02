@@ -1,3 +1,7 @@
+import type { ResumeContact } from "@/lib/resumeContact";
+
+export type { ResumeContact } from "@/lib/resumeContact";
+
 export type ResumeSectionType =
   | "experience"
   | "education"
@@ -50,6 +54,8 @@ export type GenerateApiResponse = {
   clarifyingQuestions: string[];
   /** 作品处理失败 / 超上限等可见提示（可选） */
   warnings?: string[];
+  /** 从原简历抽取的联系方式；缺字段为空 */
+  contact?: ResumeContact;
 };
 
 export type ClarifyingAnswer = {
@@ -67,13 +73,14 @@ export type ParsedExperienceType =
 export type ParsedExperience = {
   id: string;
   title: string;
-  /** 该段完整原文，阶段2增强直接用此快照，禁止二次切段 */
+  /** 该段完整原文，阶段2 增强直接用此快照，禁止二次切段 */
   original: string;
   type: ParsedExperienceType;
 };
 
 export type ParseExperiencesResponse = {
   experiences: ParsedExperience[];
+  contact?: ResumeContact;
 };
 
 /** 作品归属：new = 新项目；否则为 experiencesSnapshot 中的经历 id */

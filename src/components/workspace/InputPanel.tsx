@@ -6,7 +6,9 @@ import type {
   AssetBinding,
   AssetBindTarget,
   ParsedExperience,
+  ResumeContact,
 } from "@/lib/generateTypes";
+import { normalizeContact } from "@/lib/resumeContact";
 import FileDropzone, { type UploadedFile } from "./FileDropzone";
 import ResumeUpload, { type ResumeUploadState } from "./ResumeUpload";
 
@@ -45,6 +47,8 @@ export type GeneratePayload = {
   experiencesSnapshot: ParsedExperience[];
   /** 作品 → 归属（经历 id 或 new） */
   assetBindings: AssetBinding[];
+  /** 阶段1 从简历抽取的联系方式 */
+  contact: ResumeContact;
 };
 
 type ParseStatus = "idle" | "loading" | "ready" | "error";
@@ -102,6 +106,7 @@ export default function InputPanel({
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [notes, setNotes] = useState("");
   const [experiences, setExperiences] = useState<ParsedExperience[]>([]);
+  const [contact, setContact] = useState<ResumeContact>({});
   const [parseStatus, setParseStatus] = useState<ParseStatus>("idle");
   const [parseError, setParseError] = useState<string | null>(null);
   /** assetId → bindTo；默认 new */
@@ -162,6 +167,7 @@ export default function InputPanel({
     setParseStatus("loading");
     setParseError(null);
     setExperiences([]);
+    setContact({});
 
     try {
       const response = await fetch("/api/parse-experiences", {
@@ -177,6 +183,7 @@ export default function InputPanel({
 
       const payload = (await response.json().catch(() => null)) as {
         experiences?: ParsedExperience[];
+        contact?: ResumeContact;
         error?: string;
         detail?: string;
       } | null;
@@ -196,11 +203,13 @@ export default function InputPanel({
       }
 
       setExperiences(list);
+      setContact(normalizeContact(payload?.contact ?? {}));
       setParseStatus("ready");
       parsedResumeUrlRef.current = resumeUrl;
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setExperiences([]);
+      setContact({});
       setParseStatus("error");
       setParseError(
         err instanceof Error && err.message
@@ -217,6 +226,7 @@ export default function InputPanel({
       if (resumeState.status === "idle" || resumeState.status === "uploading") {
         parseAbortRef.current?.abort();
         setExperiences([]);
+        setContact({});
         setParseStatus("idle");
         setParseError(null);
         parsedResumeUrlRef.current = null;
@@ -270,6 +280,7 @@ export default function InputPanel({
       userNotes: notes.trim(),
       experiencesSnapshot: experiences,
       assetBindings,
+      contact,
     };
   };
 
