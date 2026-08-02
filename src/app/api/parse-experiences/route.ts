@@ -125,7 +125,7 @@ export async function POST(request: Request) {
 
   try {
     const completion = await openai.chat.completions.create({
-      model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+      model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [

@@ -106,7 +106,7 @@ export async function POST(request: Request) {
   // —— 阶段二：简历降维打击（DeepSeek + STAR）——
   try {
     const completion = await openai.chat.completions.create({
-      model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+      model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
       temperature: 0.45,
       response_format: { type: "json_object" },
       messages: [

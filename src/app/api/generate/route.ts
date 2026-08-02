@@ -328,7 +328,7 @@ async function buildPortfolioSectionsFromNewAssets(
   for (const asset of toProcess) {
     try {
       const completion = await openai.chat.completions.create({
-        model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+        model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
         temperature: 0.45,
         response_format: { type: "json_object" },
         messages: [
@@ -501,7 +501,7 @@ export async function POST(request: Request) {
       isFinal && experiencesSnapshot.length > 0;
 
     const completion = await openai.chat.completions.create({
-      model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+      model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
       temperature: 0.4,
       response_format: { type: "json_object" },
       messages: [
