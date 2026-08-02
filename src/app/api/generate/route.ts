@@ -286,6 +286,7 @@ async function enrichExperienceFromAssets(
 ) {
   if (!assetUrls.length) return experienceText;
 
+  const t0 = Date.now();
   const extractedBlocks: string[] = [];
 
   for (const asset of assetUrls.slice(0, 6)) {
@@ -300,6 +301,10 @@ async function enrichExperienceFromAssets(
       );
     }
   }
+
+  console.log(
+    `[timing][generate] enrichExperienceFromAssets assets=${assetUrls.length} blocks=${extractedBlocks.length} ms=${Date.now() - t0}`,
+  );
 
   if (!extractedBlocks.length) return experienceText;
   return [experienceText, ...extractedBlocks].filter(Boolean).join("\n\n");
@@ -325,8 +330,11 @@ async function buildPortfolioSectionsFromNewAssets(
     );
   }
 
+  const tPhase = Date.now();
   for (const asset of toProcess) {
+    const tAsset = Date.now();
     try {
+      const tDs = Date.now();
       const completion = await openai.chat.completions.create({
         model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
         temperature: 0.45,
@@ -353,6 +361,9 @@ ${asset.insight}
           },
         ],
       });
+      console.log(
+        `[timing][generate] deepseek portfolio-new file=${asset.fileName} ms=${Date.now() - tDs}`,
+      );
 
       const content = completion.choices[0]?.message?.content;
       if (!content) {
@@ -381,13 +392,22 @@ ${asset.insight}
     } catch (error) {
       console.warn("[generate] portfolio new-asset failed", asset.fileName, error);
       warnings.push(`作品《${asset.fileName}》处理失败，可重试`);
+    } finally {
+      console.log(
+        `[timing][generate] portfolio-new-asset file=${asset.fileName} totalMs=${Date.now() - tAsset}`,
+      );
     }
   }
+
+  console.log(
+    `[timing][generate] buildPortfolioSectionsFromNewAssets count=${toProcess.length} sections=${sections.length} ms=${Date.now() - tPhase}`,
+  );
 
   return { sections, warnings };
 }
 
 export async function POST(request: Request) {
+  const tRequest = Date.now();
   let body: GenerateRequestBody;
 
   try {
@@ -421,9 +441,17 @@ export async function POST(request: Request) {
   const experiencesSnapshot = parseExperiencesSnapshot(body.experiencesSnapshot);
   const userNotes = String(body.userNotes ?? "").slice(0, 2_000);
 
+  console.log(
+    `[timing][generate] START isFinal=${isFinal} resumeUrl=${Boolean(resumeUrl)} assetBindings=${assetBindings.length} assetUrls=${assetUrls.length} snapshot=${experiencesSnapshot.length}`,
+  );
+
   // 从 Blob URL 拉取简历并解析纯文本
   if (resumeUrl) {
+    const tResume = Date.now();
     const parsed = await parseDocumentFromUrl(resumeUrl, resumeFileName);
+    console.log(
+      `[timing][generate] resume parseDocumentFromUrl file=${resumeFileName} ms=${Date.now() - tResume} ok=${parsed.ok}`,
+    );
     if (!parsed.ok) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
@@ -465,13 +493,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const tAssets = Date.now();
     for (const binding of bindingsToProcess) {
+      const tOne = Date.now();
       const insight = await readAssetInsight({
         assetId: binding.assetId,
         fileName: binding.name,
         url: binding.url,
         userNotes,
       });
+      console.log(
+        `[timing][generate] readAssetInsight bindTo=${binding.bindTo} file=${binding.name} engine=${insight.engine} ms=${Date.now() - tOne}`,
+      );
 
       if (binding.bindTo === "new" || !snapshotIds.has(binding.bindTo)) {
         if (binding.bindTo !== "new" && !snapshotIds.has(binding.bindTo)) {
@@ -494,12 +527,16 @@ export async function POST(request: Request) {
       names.push(binding.name);
       enhancedByMap[binding.bindTo] = names;
     }
+    console.log(
+      `[timing][generate] readAllAssetInsights count=${bindingsToProcess.length} enhanceExps=${enhanceMap.size} newAssets=${newAssets.length} ms=${Date.now() - tAssets}`,
+    );
   }
 
   try {
     const useSnapshotFinal =
       isFinal && experiencesSnapshot.length > 0;
 
+    const tDeepseek = Date.now();
     const completion = await openai.chat.completions.create({
       model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
       temperature: 0.4,
@@ -530,9 +567,15 @@ export async function POST(request: Request) {
         },
       ],
     });
+    console.log(
+      `[timing][generate] deepseek main phase=${phase} useSnapshot=${useSnapshotFinal} ms=${Date.now() - tDeepseek}`,
+    );
 
     const content = completion.choices[0]?.message?.content;
     if (!content) {
+      console.log(
+        `[timing][generate] END early empty-content totalMs=${Date.now() - tRequest}`,
+      );
       return NextResponse.json(
         { error: "DeepSeek 返回空内容，请重试" },
         { status: 502 },
@@ -543,6 +586,9 @@ export async function POST(request: Request) {
 
     if (isFinal) {
       if (!isValidFinal(parsed)) {
+        console.log(
+          `[timing][generate] END early invalid-final totalMs=${Date.now() - tRequest}`,
+        );
         return NextResponse.json(
           { error: "终版 JSON 结构不完整，请重试" },
           { status: 502 },
@@ -586,19 +632,32 @@ export async function POST(request: Request) {
         };
       }
 
+      console.log(
+        `[timing][generate] END success phase=result totalMs=${Date.now() - tRequest}`,
+      );
       return NextResponse.json(result);
     }
 
     if (!isValidDeepDive(parsed)) {
+      console.log(
+        `[timing][generate] END early invalid-deepdive totalMs=${Date.now() - tRequest}`,
+      );
       return NextResponse.json(
         { error: "追问阶段 JSON 结构不完整，请重试" },
         { status: 502 },
       );
     }
 
+    console.log(
+      `[timing][generate] END success phase=deepdive totalMs=${Date.now() - tRequest}`,
+    );
     return NextResponse.json(normalizeResponse(parsed, "deepdive"));
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
+    console.log(
+      `[timing][generate] END error totalMs=${Date.now() - tRequest}`,
+      message,
+    );
     return NextResponse.json(
       { error: "DeepSeek 调用失败", detail: message },
       { status: 502 },

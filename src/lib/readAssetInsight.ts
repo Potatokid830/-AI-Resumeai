@@ -41,10 +41,14 @@ export async function readAssetInsight(options: {
 }): Promise<AssetInsight> {
   const { assetId, fileName, url, userNotes = "" } = options;
   const ext = getExtension(fileName);
+  const t0 = Date.now();
 
   if (VISION_EXTENSIONS.has(ext)) {
     try {
       const result = await extractMediaInsights(url, fileName, userNotes);
+      console.log(
+        `[timing] readAssetInsight VISION file=${fileName} engine=${result.engine} ms=${Date.now() - t0}`,
+      );
       return {
         assetId,
         fileName,
@@ -54,6 +58,10 @@ export async function readAssetInsight(options: {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "视觉读取失败";
+      console.log(
+        `[timing] readAssetInsight VISION-FAIL file=${fileName} ms=${Date.now() - t0}`,
+        message,
+      );
       return {
         assetId,
         fileName,
@@ -69,6 +77,9 @@ export async function readAssetInsight(options: {
       const parsed = await parseDocumentFromUrl(url, fileName);
       if (parsed.ok && parsed.text.trim()) {
         const text = parsed.text.replace(/\s+/g, " ").trim().slice(0, 8_000);
+        console.log(
+          `[timing] readAssetInsight DOC file=${fileName} engine=document-text chars=${text.length} ms=${Date.now() - t0}`,
+        );
         return {
           assetId,
           fileName,
@@ -77,6 +88,9 @@ export async function readAssetInsight(options: {
           engine: "document-text",
         };
       }
+      console.log(
+        `[timing] readAssetInsight DOC-EMPTY file=${fileName} ms=${Date.now() - t0}`,
+      );
       return {
         assetId,
         fileName,
@@ -86,6 +100,10 @@ export async function readAssetInsight(options: {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "文档读取失败";
+      console.log(
+        `[timing] readAssetInsight DOC-FAIL file=${fileName} ms=${Date.now() - t0}`,
+        message,
+      );
       return {
         assetId,
         fileName,
@@ -99,6 +117,9 @@ export async function readAssetInsight(options: {
   // 未知类型：仍尝试 Gemini（可能是其它媒体）
   try {
     const result = await extractMediaInsights(url, fileName, userNotes);
+    console.log(
+      `[timing] readAssetInsight FALLBACK-VISION file=${fileName} engine=${result.engine} ms=${Date.now() - t0}`,
+    );
     return {
       assetId,
       fileName,
@@ -107,6 +128,9 @@ export async function readAssetInsight(options: {
       engine: result.engine,
     };
   } catch {
+    console.log(
+      `[timing] readAssetInsight UNSUPPORTED file=${fileName} ms=${Date.now() - t0}`,
+    );
     return {
       assetId,
       fileName,

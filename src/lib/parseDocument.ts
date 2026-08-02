@@ -19,8 +19,15 @@ function getExtension(name: string) {
 }
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
+  const t0 = Date.now();
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const proxyMs = Date.now() - t0;
+  const tExtract = Date.now();
   const { text } = await extractText(pdf, { mergePages: true });
+  const extractMs = Date.now() - tExtract;
+  console.log(
+    `[timing] extractPdfText bytes=${buffer.length} proxyMs=${proxyMs} extractMs=${extractMs} totalMs=${Date.now() - t0}`,
+  );
   return (text ?? "").trim();
 }
 
@@ -42,10 +49,14 @@ export async function parseDocumentBuffer(
   }
 
   const extension = getExtension(fileName);
+  const t0 = Date.now();
 
   try {
     if (mime === "application/pdf" || extension === ".pdf") {
       const text = await extractPdfText(buffer);
+      console.log(
+        `[timing] parseDocumentBuffer PDF file=${fileName} bytes=${buffer.length} ms=${Date.now() - t0} ok=${Boolean(text)}`,
+      );
       if (!text) {
         return {
           ok: false,
@@ -58,6 +69,9 @@ export async function parseDocumentBuffer(
     if (mime === DOCX_MIME || extension === ".docx") {
       const result = await mammoth.extractRawText({ buffer });
       const text = result.value?.trim() ?? "";
+      console.log(
+        `[timing] parseDocumentBuffer DOCX file=${fileName} bytes=${buffer.length} ms=${Date.now() - t0} ok=${Boolean(text)}`,
+      );
       if (!text) {
         return {
           ok: false,
@@ -109,22 +123,37 @@ export async function parseDocumentFromUrl(
   url: string,
   preferredName?: string,
 ): Promise<ParseDocumentResult> {
+  const fileName = preferredName || fileNameFromUrl(url, "document");
+  const t0 = Date.now();
   try {
     const blob = await fetchBlobBuffer(url);
+    const downloadMs = Date.now() - t0;
     if (!blob) {
+      console.log(
+        `[timing] parseDocumentFromUrl FAIL file=${fileName} downloadMs=${downloadMs} reason=blob-null`,
+      );
       return {
         ok: false,
         error: "无法下载云端文件（Private Blob 读取失败）",
       };
     }
 
-    const fileName = preferredName || fileNameFromUrl(url, "document");
-    return parseDocumentBuffer(
+    const tParse = Date.now();
+    const parsed = await parseDocumentBuffer(
       blob.buffer,
       fileName,
       blob.contentType.split(";")[0]?.trim(),
     );
-  } catch {
+    const parseMs = Date.now() - tParse;
+    console.log(
+      `[timing] parseDocumentFromUrl DONE file=${fileName} downloadMs=${downloadMs} parseMs=${parseMs} totalMs=${Date.now() - t0} ok=${parsed.ok}`,
+    );
+    return parsed;
+  } catch (error) {
+    console.log(
+      `[timing] parseDocumentFromUrl ERROR file=${fileName} totalMs=${Date.now() - t0}`,
+      error,
+    );
     return {
       ok: false,
       error: "下载或解析云端文件失败，请重新上传后重试",
