@@ -392,6 +392,20 @@ function ResultState({
         />
       </motion.div>
 
+      {result.warnings && result.warnings.length > 0 ? (
+        <div
+          role="status"
+          className="no-export rounded-xl border border-amber-200/25 bg-amber-100/[0.07] px-4 py-3 text-[12.5px] leading-relaxed text-amber-100/90"
+        >
+          <p className="mb-1.5 font-medium text-amber-50/95">作品处理提示</p>
+          <ul className="list-disc space-y-1 pl-4">
+            {result.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="no-export mb-0 flex items-center justify-end gap-2">
         <button
           type="button"

@@ -305,15 +305,27 @@ async function enrichExperienceFromAssets(
   return [experienceText, ...extractedBlocks].filter(Boolean).join("\n\n");
 }
 
+const MAX_ASSET_BINDINGS = 8;
+const MAX_NEW_PORTFOLIO_ASSETS = 4;
+
 async function buildPortfolioSectionsFromNewAssets(
   openai: OpenAI,
   jdText: string,
   userNotes: string,
   newAssets: AssetInsight[],
-): Promise<ResumeSection[]> {
+): Promise<{ sections: ResumeSection[]; warnings: string[] }> {
   const sections: ResumeSection[] = [];
+  const warnings: string[] = [];
 
-  for (const asset of newAssets.slice(0, 4)) {
+  const toProcess = newAssets.slice(0, MAX_NEW_PORTFOLIO_ASSETS);
+  const skipped = newAssets.slice(MAX_NEW_PORTFOLIO_ASSETS);
+  if (skipped.length > 0) {
+    warnings.push(
+      `本次最多处理 ${MAX_NEW_PORTFOLIO_ASSETS} 个「新项目」作品，超出部分未处理：${skipped.map((a) => `《${a.fileName}》`).join("、")}`,
+    );
+  }
+
+  for (const asset of toProcess) {
     try {
       const completion = await openai.chat.completions.create({
         model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
@@ -343,9 +355,15 @@ ${asset.insight}
       });
 
       const content = completion.choices[0]?.message?.content;
-      if (!content) continue;
+      if (!content) {
+        warnings.push(`作品《${asset.fileName}》处理失败，可重试`);
+        continue;
+      }
       const parsed = extractJsonPayload(content);
-      if (!isValidFinalSections(parsed)) continue;
+      if (!isValidFinalSections(parsed)) {
+        warnings.push(`作品《${asset.fileName}》处理失败，可重试`);
+        continue;
+      }
 
       const normalized = normalizeGenerateResponse(
         parsed as GenerateApiResponse,
@@ -357,13 +375,16 @@ ${asset.insight}
       );
       if (normalized.sections?.length) {
         sections.push(...normalized.sections);
+      } else {
+        warnings.push(`作品《${asset.fileName}》处理失败，可重试`);
       }
     } catch (error) {
       console.warn("[generate] portfolio new-asset failed", asset.fileName, error);
+      warnings.push(`作品《${asset.fileName}》处理失败，可重试`);
     }
   }
 
-  return sections;
+  return { sections, warnings };
 }
 
 export async function POST(request: Request) {
@@ -432,11 +453,19 @@ export async function POST(request: Request) {
   const enhanceMap = new Map<string, AssetInsight[]>();
   const newAssets: AssetInsight[] = [];
   const enhancedByMap: Record<string, string[]> = {};
+  const processingWarnings: string[] = [];
 
   if (isFinal && assetBindings.length > 0) {
     const snapshotIds = new Set(experiencesSnapshot.map((e) => e.id));
+    const bindingsToProcess = assetBindings.slice(0, MAX_ASSET_BINDINGS);
+    const bindingsSkipped = assetBindings.slice(MAX_ASSET_BINDINGS);
+    if (bindingsSkipped.length > 0) {
+      processingWarnings.push(
+        `本次最多处理 ${MAX_ASSET_BINDINGS} 个作品，超出部分未处理：${bindingsSkipped.map((b) => `《${b.name}》`).join("、")}`,
+      );
+    }
 
-    for (const binding of assetBindings.slice(0, 8)) {
+    for (const binding of bindingsToProcess) {
       const insight = await readAssetInsight({
         assetId: binding.assetId,
         fileName: binding.name,
@@ -449,6 +478,9 @@ export async function POST(request: Request) {
           console.warn(
             "[generate] bindTo 不在 snapshot 中，降级为 new",
             binding.bindTo,
+          );
+          processingWarnings.push(
+            `作品《${binding.name}》所选经历无效，已按「新项目」处理`,
           );
         }
         newAssets.push(insight);
@@ -528,18 +560,30 @@ export async function POST(request: Request) {
       }
 
       if (newAssets.length > 0) {
-        const portfolioSections = await buildPortfolioSectionsFromNewAssets(
-          openai,
-          jdText,
-          userNotes,
-          newAssets,
-        );
+        const { sections: portfolioSections, warnings: portfolioWarnings } =
+          await buildPortfolioSectionsFromNewAssets(
+            openai,
+            jdText,
+            userNotes,
+            newAssets,
+          );
+        processingWarnings.push(...portfolioWarnings);
         if (portfolioSections.length) {
           result = {
             ...result,
             sections: [...(result.sections ?? []), ...portfolioSections],
           };
         }
+      }
+
+      if (processingWarnings.length > 0) {
+        result = {
+          ...result,
+          warnings: [
+            ...(result.warnings ?? []),
+            ...processingWarnings,
+          ],
+        };
       }
 
       return NextResponse.json(result);

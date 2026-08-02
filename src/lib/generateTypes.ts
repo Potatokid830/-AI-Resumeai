@@ -48,6 +48,8 @@ export type GenerateApiResponse = {
   gapAnalysis: string;
   interviewDefense: string;
   clarifyingQuestions: string[];
+  /** 作品处理失败 / 超上限等可见提示（可选） */
+  warnings?: string[];
 };
 
 export type ClarifyingAnswer = {

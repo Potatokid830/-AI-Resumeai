@@ -29,6 +29,10 @@ const ACCEPTED_EXTENSIONS = [
   ".mp4",
   ".webm",
   ".mov",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
 ] as const;
 const ACCEPT_ATTR = ACCEPTED_EXTENSIONS.join(",");
 const MAX_BYTES = 100 * 1024 * 1024;
@@ -166,7 +170,7 @@ export default function FileDropzone({
 
       for (const file of list) {
         if (!isAcceptedFile(file)) {
-          message = "支持 pdf / pptx / docx / xlsx / csv / 视频";
+          message = "支持 pdf / pptx / docx / xlsx / csv / 视频 / 图片";
           continue;
         }
         if (file.size > MAX_BYTES) {
@@ -333,7 +337,7 @@ export default function FileDropzone({
               : "拖拽大文件至此，将直传 Vercel Blob（绕过 4.5MB 限制）"}
           </p>
           <p className="mt-2 text-[11px] text-zinc-600">
-            pdf / pptx / docx / xlsx / csv / 视频 · 最大 100MB
+            pdf / pptx / docx / xlsx / csv / 视频 / 图片 · 最大 100MB
           </p>
         </motion.div>
       </motion.div>

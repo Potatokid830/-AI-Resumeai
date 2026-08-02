@@ -13,7 +13,17 @@ import ResumeUpload, { type ResumeUploadState } from "./ResumeUpload";
 const fieldClassName =
   "w-full resize-none rounded-2xl border border-white/[0.07] bg-white/[0.02] px-4 py-3.5 text-[14px] leading-relaxed text-zinc-200 placeholder:text-zinc-600 outline-none transition-[border-color,box-shadow,background-color] duration-300 hover:border-white/[0.1] hover:bg-white/[0.03] focus:border-white/20 focus:bg-white/[0.04] focus:shadow-[0_0_0_3px_rgba(255,255,255,0.06),0_0_32px_-8px_rgba(255,255,255,0.12)]";
 
-const PORTFOLIO_EXTENSIONS = [".mp4", ".mov", ".webm", ".pdf", ".pptx"] as const;
+const PORTFOLIO_EXTENSIONS = [
+  ".mp4",
+  ".mov",
+  ".webm",
+  ".pdf",
+  ".pptx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+] as const;
 
 export type GenerateAssetRef = {
   name: string;
@@ -408,7 +418,7 @@ export default function InputPanel({
             <p className="text-center text-[12px] text-zinc-500">
               {isUploading
                 ? "文件正在直传云端，完成后即可生成"
-                : "上传 mp4 / mov / pdf / pptx 后可启用作品集解析"}
+                : "上传 mp4 / mov / pdf / pptx / 图片后可启用作品集解析"}
             </p>
           )}
 

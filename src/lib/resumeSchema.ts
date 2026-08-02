@@ -232,6 +232,11 @@ export function normalizeGenerateResponse(
           .filter((q): q is string => typeof q === "string" && Boolean(q))
           .slice(0, 3)
       : [],
+    warnings: Array.isArray(data.warnings)
+      ? data.warnings.filter(
+          (w): w is string => typeof w === "string" && w.trim().length > 0,
+        )
+      : undefined,
   };
 }
 
