@@ -27,8 +27,8 @@ import {
 } from "@/lib/resumeSchema";
 
 export const runtime = "nodejs";
-/** 终版可能读视频 / 多作品，放宽超时 */
-export const maxDuration = 120;
+/** Vercel 免费版硬上限 60s */
+export const maxDuration = 60;
 
 function getDeepSeekClient() {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -305,8 +305,8 @@ async function enrichExperienceFromAssets(
   return [experienceText, ...extractedBlocks].filter(Boolean).join("\n\n");
 }
 
-const MAX_ASSET_BINDINGS = 8;
-const MAX_NEW_PORTFOLIO_ASSETS = 4;
+const MAX_ASSET_BINDINGS = 3;
+const MAX_NEW_PORTFOLIO_ASSETS = 2;
 
 async function buildPortfolioSectionsFromNewAssets(
   openai: OpenAI,
