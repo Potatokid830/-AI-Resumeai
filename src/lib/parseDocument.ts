@@ -1,7 +1,7 @@
-import "@/lib/polyfills/mathSumPrecise";
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy } from "unpdf";
 import { fetchBlobBuffer } from "@/lib/fetchBlobBuffer";
+import { ensureMathSumPrecise } from "@/lib/polyfills/mathSumPrecise";
 
 /** Serverless 内解析上限，避免超大视频/文件撑爆内存 */
 export const MAX_PARSE_BYTES = 40 * 1024 * 1024;
@@ -20,6 +20,12 @@ function getExtension(name: string) {
 }
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
+  // 显式调用，避免 side-effect import 被 tree-shake；必须在 unpdf/PDF.js 跑之前挂上
+  const sumPreciseType = ensureMathSumPrecise();
+  console.log(
+    `[polyfill] Math.sumPrecise typeof=${sumPreciseType} (must be function before PDF.js)`,
+  );
+
   const t0 = Date.now();
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
   const proxyMs = Date.now() - t0;
@@ -27,7 +33,7 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
   const { text } = await extractText(pdf, { mergePages: true });
   const extractMs = Date.now() - tExtract;
   console.log(
-    `[timing] extractPdfText bytes=${buffer.length} proxyMs=${proxyMs} extractMs=${extractMs} totalMs=${Date.now() - t0}`,
+    `[timing] extractPdfText bytes=${buffer.length} proxyMs=${proxyMs} extractMs=${extractMs} totalMs=${Date.now() - t0} sumPrecise=${typeof globalThis.Math.sumPrecise}`,
   );
   return (text ?? "").trim();
 }

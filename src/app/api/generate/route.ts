@@ -12,6 +12,7 @@ import {
   isTextExtractable,
   parseDocumentFromUrl,
 } from "@/lib/parseDocument";
+import { ensureMathSumPrecise } from "@/lib/polyfills/mathSumPrecise";
 import {
   PORTFOLIO_STAR_SYSTEM,
   PROMPT_ENHANCE_WITH_PORTFOLIO,
@@ -408,6 +409,11 @@ ${asset.insight}
 
 export async function POST(request: Request) {
   const tRequest = Date.now();
+  // 请求入口再挂一次：unpdf 为 serverExternalPackages，不能依赖副作用 import
+  console.log(
+    `[polyfill] generate POST Math.sumPrecise typeof=${ensureMathSumPrecise()}`,
+  );
+
   let body: GenerateRequestBody;
 
   try {
