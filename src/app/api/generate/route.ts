@@ -307,7 +307,7 @@ async function enrichExperienceFromAssets(
   return [experienceText, ...extractedBlocks].filter(Boolean).join("\n\n");
 }
 
-const MAX_ASSET_BINDINGS = 3;
+const MAX_ASSET_BINDINGS = 2;
 const MAX_NEW_PORTFOLIO_ASSETS = 2;
 
 async function buildPortfolioSectionsFromNewAssets(
@@ -323,7 +323,7 @@ async function buildPortfolioSectionsFromNewAssets(
   const skipped = newAssets.slice(MAX_NEW_PORTFOLIO_ASSETS);
   if (skipped.length > 0) {
     warnings.push(
-      `本次最多处理 ${MAX_NEW_PORTFOLIO_ASSETS} 个「新项目」作品，超出部分未处理：${skipped.map((a) => `《${a.fileName}》`).join("、")}`,
+      `本次最多处理 ${MAX_NEW_PORTFOLIO_ASSETS} 个作品，超出部分未处理：${skipped.map((a) => `《${a.fileName}》`).join("、")}`,
     );
   }
 
