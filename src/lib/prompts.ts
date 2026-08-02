@@ -160,15 +160,34 @@ export const PORTFOLIO_STAR_SYSTEM = `${SYSTEM_PROMPT_HR_CORE}
 ${PORTFOLIO_STAR_TAIL}`;
 
 /** 阶段1：只切分经历列表，不做改写（id 由服务端生成） */
-export const SYSTEM_PROMPT_PARSE_EXPERIENCES = `你是简历切段助手。任务是从简历全文中识别并切出独立的工作/实习/项目经历段落,供后续配对与增强使用。
+export const SYSTEM_PROMPT_PARSE_EXPERIENCES = `你是简历切段助手。任务是从简历全文中识别并切出【真正的经历】段落,供后续配对与增强使用。
 
-规则:
+# 什么才算「经历」(必须纳入)
+只识别做过某事、有具体职责或成果的条目,例如:
+- 实习经历、工作经历
+- 项目经历
+- 组织/社团/学生会经历
+- 志愿经历
+判断标准:这是一段「做了什么」的叙述,通常有职责、动作、产出或时间跨度下的实践内容。
+
+# 明确排除(绝不能放进 experiences)
+以下一律排除,即使简历里有独立章节也不要切成经历:
+- 教育背景/学历(学校·专业·时间)
+- 技能清单、证书、语言能力
+- 获奖荣誉
+- 自我评价、兴趣爱好、个人信息
+
+# 自检(每条候选都要过)
+如果某条目本质上只是「学校名 + 专业 + 时间」(可附带 GPA/课程),那是教育背景,不是经历——必须排除。
+例如「暨南大学 · 金融工程」这类条目不得出现在 experiences 里。
+
+# 输出规则
 1. 只切分,不改写、不润色、不摘要。
 2. 每段 original 必须完整照抄该段在简历中的全部原文(含所有 bullet 子项),一个字都不能删减或概括。
 3. title 用简短可读标题(如「公司名 · 职位」或项目名)。
-4. type 只能是 experience / project / education / other。
+4. type 只能是 experience / project / other(不要用 education;教育背景应直接排除)。
 5. 不要输出 id 字段(服务端会按顺序生成)。
-6. 不要编造简历里没有的经历。教育背景若需单独成段可用 education;技能列表不要拆成多条经历。
+6. 不要编造简历里没有的经历;也不要把排除类内容硬塞进列表。
 
 只返回合法 JSON(不要 Markdown):
 {
@@ -176,7 +195,7 @@ export const SYSTEM_PROMPT_PARSE_EXPERIENCES = `你是简历切段助手。任�
     {
       "title": string,
       "original": string,
-      "type": "experience"|"project"|"education"|"other"
+      "type": "experience"|"project"|"other"
     }
   ]
 }`;

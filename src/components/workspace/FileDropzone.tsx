@@ -17,6 +17,7 @@ import {
   Presentation,
   X,
 } from "lucide-react";
+import type { AssetBindTarget, ParsedExperience } from "@/lib/generateTypes";
 import { uploadFileToBlob } from "@/lib/blobClientUpload";
 
 const ACCEPTED_EXTENSIONS = [
@@ -90,12 +91,20 @@ type FileDropzoneProps = {
   files: UploadedFile[];
   onFilesChange: (files: UploadedFile[]) => void;
   disabled?: boolean;
+  /** P1 经历列表；用于配对下拉 */
+  experiences?: ParsedExperience[];
+  /** assetId → bindTo（经历 id 或 "new"） */
+  bindings?: Record<string, AssetBindTarget>;
+  onBindingChange?: (assetId: string, bindTo: AssetBindTarget) => void;
 };
 
 export default function FileDropzone({
   files,
   onFilesChange,
   disabled = false,
+  experiences = [],
+  bindings = {},
+  onBindingChange,
 }: FileDropzoneProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -402,6 +411,43 @@ export default function FileDropzone({
                       animate={{ width: `${file.progress}%` }}
                       transition={{ duration: 0.2 }}
                     />
+                  </div>
+                )}
+
+                {file.status !== "error" && (
+                  <div
+                    className="mt-2.5 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <label
+                      htmlFor={`bind-${file.id}`}
+                      className="shrink-0 text-[11px] tracking-tight text-zinc-500"
+                    >
+                      归属经历
+                    </label>
+                    <select
+                      id={`bind-${file.id}`}
+                      value={bindings[file.id] ?? "new"}
+                      disabled={
+                        disabled ||
+                        file.status === "uploading" ||
+                        !onBindingChange
+                      }
+                      onChange={(event) => {
+                        onBindingChange?.(
+                          file.id,
+                          event.target.value as AssetBindTarget,
+                        );
+                      }}
+                      className="w-full min-w-0 flex-1 rounded-lg border border-white/[0.1] bg-zinc-950/70 px-2.5 py-1.5 text-[12px] text-zinc-200 outline-none transition-colors hover:border-white/20 focus:border-white/25 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="new">新项目</option>
+                      {experiences.map((exp) => (
+                        <option key={exp.id} value={exp.id}>
+                          {exp.title}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
               </motion.li>

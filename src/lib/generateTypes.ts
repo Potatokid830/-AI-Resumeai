@@ -71,3 +71,14 @@ export type ParsedExperience = {
 export type ParseExperiencesResponse = {
   experiences: ParsedExperience[];
 };
+
+/** 作品归属：new = 新项目；否则为 experiencesSnapshot 中的经历 id */
+export type AssetBindTarget = "new" | (string & {});
+
+export type AssetBinding = {
+  assetId: string;
+  name: string;
+  url: string;
+  size: number;
+  bindTo: AssetBindTarget;
+};

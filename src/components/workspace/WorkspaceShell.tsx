@@ -35,6 +35,7 @@ type SessionPayload = {
   assetUrls: GeneratePayload["assetUrls"];
   userNotes: string;
   experiencesSnapshot: GeneratePayload["experiencesSnapshot"];
+  assetBindings: GeneratePayload["assetBindings"];
   questions: string[];
 };
 
@@ -319,6 +320,7 @@ export default function WorkspaceShell() {
             assetUrls: payload.assetUrls,
             userNotes: payload.userNotes,
             experiencesSnapshot: payload.experiencesSnapshot,
+            assetBindings: payload.assetBindings,
             questions: data.clarifyingQuestions,
           };
 
@@ -390,6 +392,7 @@ export default function WorkspaceShell() {
             assetUrls: session.assetUrls,
             userNotes: session.userNotes,
             experiencesSnapshot: session.experiencesSnapshot,
+            assetBindings: session.assetBindings,
           },
           isFinal: true,
           clarifyingAnswers,

@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Clapperboard, LoaderCircle, Sparkles } from "lucide-react";
-import type { ParsedExperience } from "@/lib/generateTypes";
+import type {
+  AssetBinding,
+  AssetBindTarget,
+  ParsedExperience,
+} from "@/lib/generateTypes";
 import FileDropzone, { type UploadedFile } from "./FileDropzone";
 import ResumeUpload, { type ResumeUploadState } from "./ResumeUpload";
 
@@ -27,9 +31,10 @@ export type GeneratePayload = {
   userNotes: string;
   /**
    * 阶段1 解析快照：阶段2 增强必须直接使用，禁止后端二次切段。
-   * P2 起与 assetBindings 一并提交。
    */
   experiencesSnapshot: ParsedExperience[];
+  /** 作品 → 归属（经历 id 或 new） */
+  assetBindings: AssetBinding[];
 };
 
 type ParseStatus = "idle" | "loading" | "ready" | "error";
@@ -89,10 +94,39 @@ export default function InputPanel({
   const [experiences, setExperiences] = useState<ParsedExperience[]>([]);
   const [parseStatus, setParseStatus] = useState<ParseStatus>("idle");
   const [parseError, setParseError] = useState<string | null>(null);
+  /** assetId → bindTo；默认 new */
+  const [bindings, setBindings] = useState<Record<string, AssetBindTarget>>({});
   const parsedResumeUrlRef = useRef<string | null>(null);
   const parseAbortRef = useRef<AbortController | null>(null);
 
   const busy = isGenerating || isAnalyzingPortfolio;
+
+  // 文件增删时同步 bindings：新文件默认 new，移除的删掉
+  useEffect(() => {
+    setBindings((prev) => {
+      const next: Record<string, AssetBindTarget> = {};
+      for (const file of files) {
+        next[file.id] = prev[file.id] ?? "new";
+      }
+      return next;
+    });
+  }, [files]);
+
+  // 经历列表刷新后：若绑定指向已不存在的 id，回退为 new
+  useEffect(() => {
+    const validIds = new Set(experiences.map((item) => item.id));
+    setBindings((prev) => {
+      let changed = false;
+      const next: Record<string, AssetBindTarget> = { ...prev };
+      for (const [assetId, bindTo] of Object.entries(next)) {
+        if (bindTo !== "new" && !validIds.has(bindTo)) {
+          next[assetId] = "new";
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [experiences]);
 
   const isUploading = useMemo(() => {
     if (resumeState.status === "uploading") return true;
@@ -199,13 +233,23 @@ export default function InputPanel({
     const resumeFileName =
       resumeState.status === "ready" ? resumeState.asset.name : null;
 
-    const assetUrls: GenerateAssetRef[] = files
-      .filter((file) => file.status === "ready" && file.url)
-      .map((file) => ({
-        name: file.name,
-        url: file.url as string,
-        size: file.size,
-      }));
+    const readyFiles = files.filter(
+      (file) => file.status === "ready" && file.url,
+    );
+
+    const assetUrls: GenerateAssetRef[] = readyFiles.map((file) => ({
+      name: file.name,
+      url: file.url as string,
+      size: file.size,
+    }));
+
+    const assetBindings: AssetBinding[] = readyFiles.map((file) => ({
+      assetId: file.id,
+      name: file.name,
+      url: file.url as string,
+      size: file.size,
+      bindTo: bindings[file.id] ?? "new",
+    }));
 
     return {
       jdText: jd.trim(),
@@ -215,7 +259,12 @@ export default function InputPanel({
       assetUrls,
       userNotes: notes.trim(),
       experiencesSnapshot: experiences,
+      assetBindings,
     };
+  };
+
+  const handleBindingChange = (assetId: string, bindTo: AssetBindTarget) => {
+    setBindings((prev) => ({ ...prev, [assetId]: bindTo }));
   };
 
   return (
@@ -320,7 +369,18 @@ export default function InputPanel({
               files={files}
               onFilesChange={setFiles}
               disabled={busy}
+              experiences={experiences}
+              bindings={bindings}
+              onBindingChange={handleBindingChange}
             />
+            {files.some((file) => file.status === "ready") &&
+              parseStatus !== "ready" && (
+                <p className="text-[12px] text-zinc-500">
+                  {parseStatus === "loading"
+                    ? "经历列表解析中，完成后可改选归属；当前默认为「新项目」"
+                    : "尚未识别简历经历时，作品默认归属「新项目」；解析成功后可改选对应经历"}
+                </p>
+              )}
           </div>
 
           <label className="flex shrink-0 flex-col gap-2">
