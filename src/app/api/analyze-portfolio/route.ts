@@ -1,5 +1,8 @@
-import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import {
+  deepseekChatCompletion,
+  getDeepSeekClient,
+} from "@/lib/deepseekCall";
 import type { GenerateApiResponse } from "@/lib/generateTypes";
 import { extractMediaInsights } from "@/lib/extractMediaInsights";
 import { PORTFOLIO_STAR_SYSTEM } from "@/lib/prompts";
@@ -21,15 +24,6 @@ type AnalyzeBody = {
   /** 兼容：多文件时取主作品 */
   assets?: Array<{ url?: string; name?: string }>;
 };
-
-function getDeepSeekClient() {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({
-    baseURL: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-    apiKey,
-  });
-}
 
 function extractJsonPayload(content: string): unknown {
   const trimmed = content.trim();
@@ -105,15 +99,18 @@ export async function POST(request: Request) {
 
   // —— 阶段二：简历降维打击（DeepSeek + STAR）——
   try {
-    const completion = await openai.chat.completions.create({
-      model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
-      temperature: 0.45,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: PORTFOLIO_STAR_SYSTEM },
-        {
-          role: "user",
-          content: `请将作品集洞察重写为 STAR 项目经历 JSON。
+    const completion = await deepseekChatCompletion(
+      openai,
+      "analyze-portfolio",
+      {
+        temperature: 0.45,
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: PORTFOLIO_STAR_SYSTEM },
+          {
+            role: "user",
+            content: `请将作品集洞察重写为 STAR 项目经历 JSON。
 
 ## 目标岗位 JD
 ${jdText || "（未提供，按通用创意/营销/产品岗表达）"}
@@ -129,9 +126,10 @@ ${userNotes || "（无）"}
 ## 阶段一 · 创意总监洞察（纯文本）
 ${mediaInsight}
 `,
-        },
-      ],
-    });
+          },
+        ],
+      },
+    );
 
     const content = completion.choices[0]?.message?.content;
     if (!content) {

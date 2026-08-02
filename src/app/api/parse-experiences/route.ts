@@ -1,5 +1,8 @@
-import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import {
+  deepseekChatCompletion,
+  getDeepSeekClient,
+} from "@/lib/deepseekCall";
 import type {
   ParsedExperience,
   ParsedExperienceType,
@@ -23,15 +26,6 @@ const EXPERIENCE_TYPES: ParsedExperienceType[] = [
   "education",
   "other",
 ];
-
-function getDeepSeekClient() {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({
-    baseURL: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-    apiKey,
-  });
-}
 
 function extractJsonPayload(content: string): unknown {
   const trimmed = content.trim();
@@ -124,15 +118,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT_PARSE_EXPERIENCES },
-        {
-          role: "user",
-          content: `请切分以下简历中的经历段落。严格返回 JSON。
+    const completion = await deepseekChatCompletion(
+      openai,
+      "parse-experiences",
+      {
+        temperature: 0.2,
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT_PARSE_EXPERIENCES },
+          {
+            role: "user",
+            content: `请切分以下简历中的经历段落。严格返回 JSON。
 
 ## 目标岗位 JD（可选，仅供标题对齐参考）
 ${jdText.trim() || "（未提供）"}
@@ -140,9 +137,10 @@ ${jdText.trim() || "（未提供）"}
 ## 简历全文
 ${resumeText.slice(0, 40_000)}
 `,
-        },
-      ],
-    });
+          },
+        ],
+      },
+    );
 
     const content = completion.choices[0]?.message?.content;
     if (!content) {

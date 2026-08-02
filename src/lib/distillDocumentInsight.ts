@@ -1,5 +1,9 @@
-import OpenAI from "openai";
 import { SYSTEM_PROMPT_DISTILL_DOCUMENT } from "@/lib/prompts";
+import {
+  DEEPSEEK_LARGE_MAX_TOKENS,
+  deepseekChatCompletion,
+  getDeepSeekClient,
+} from "@/lib/deepseekCall";
 
 /** 喂给提炼模型的原文上限 */
 export const DISTILL_INPUT_MAX_CHARS = 15_000;
@@ -11,15 +15,6 @@ export type DistillDocumentResult = {
   engine: "document-deepseek" | "document-fallback-1500";
   distillMs: number;
 };
-
-function getDeepSeekClient() {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({
-    baseURL: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-    apiKey,
-  });
-}
 
 /**
  * 将文档抽出的全文提炼为约 500 字「核心事实清单」。
@@ -54,15 +49,18 @@ export async function distillDocumentToCoreFacts(options: {
   }
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
-      temperature: 0.2,
-      max_tokens: 900,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT_DISTILL_DOCUMENT },
-        {
-          role: "user",
-          content: `## 文件名
+    const completion = await deepseekChatCompletion(
+      openai,
+      `distill-document:${fileName}`,
+      {
+        temperature: 0.2,
+        max_tokens: DEEPSEEK_LARGE_MAX_TOKENS,
+        thinking: { type: "disabled" },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT_DISTILL_DOCUMENT },
+          {
+            role: "user",
+            content: `## 文件名
 ${fileName}
 
 ## 用户备注
@@ -71,9 +69,10 @@ ${userNotes || "（无）"}
 ## 作品原文（已截断至提炼输入上限）
 ${input}
 `,
-        },
-      ],
-    });
+          },
+        ],
+      },
+    );
 
     const content = completion.choices[0]?.message?.content?.trim() ?? "";
     const distillMs = Date.now() - t0;

@@ -1,5 +1,10 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import {
+  DEEPSEEK_LARGE_MAX_TOKENS,
+  deepseekChatCompletion,
+  getDeepSeekClient,
+} from "@/lib/deepseekCall";
 import type {
   AssetBinding,
   ClarifyingAnswer,
@@ -30,16 +35,6 @@ import {
 export const runtime = "nodejs";
 /** Vercel 免费版硬上限 60s */
 export const maxDuration = 60;
-
-function getDeepSeekClient() {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return null;
-
-  return new OpenAI({
-    baseURL: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-    apiKey,
-  });
-}
 
 function buildDeepDivePrompt(
   jdText: string,
@@ -336,15 +331,19 @@ async function buildPortfolioSectionsFromNewAssets(
     const tAsset = Date.now();
     try {
       const tDs = Date.now();
-      const completion = await openai.chat.completions.create({
-        model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
-        temperature: 0.45,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: PORTFOLIO_STAR_SYSTEM },
-          {
-            role: "user",
-            content: `请将作品集洞察重写为 STAR 项目经历 JSON（sections/items）。original 可空。
+      const completion = await deepseekChatCompletion(
+        openai,
+        `portfolio-new:${asset.fileName}`,
+        {
+          temperature: 0.45,
+          max_tokens: DEEPSEEK_LARGE_MAX_TOKENS,
+          thinking: { type: "disabled" },
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: PORTFOLIO_STAR_SYSTEM },
+            {
+              role: "user",
+              content: `请将作品集洞察重写为 STAR 项目经历 JSON（sections/items）。original 可空。
 
 ## 目标岗位 JD
 ${jdText || "（未提供）"}
@@ -359,9 +358,10 @@ ${userNotes || "（无）"}
 ## 作品洞察
 ${asset.insight}
 `,
-          },
-        ],
-      });
+            },
+          ],
+        },
+      );
       console.log(
         `[timing][generate] deepseek portfolio-new file=${asset.fileName} ms=${Date.now() - tDs}`,
       );
@@ -547,39 +547,45 @@ export async function POST(request: Request) {
       isFinal && experiencesSnapshot.length > 0;
 
     const tDeepseek = Date.now();
-    const completion = await openai.chat.completions.create({
-      model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash",
-      temperature: 0.4,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: isFinal ? SYSTEM_PROMPT_FINAL : SYSTEM_PROMPT_DEEPDIVE,
-        },
-        {
-          role: "user",
-          content: useSnapshotFinal
-            ? buildFinalPromptWithSnapshot(
-                jdText,
-                resumeText,
-                clarifyingAnswers,
-                experiencesSnapshot,
-                enhanceMap,
-              )
-            : isFinal
-              ? buildFinalPrompt(
+    const completion = await deepseekChatCompletion(
+      openai,
+      `generate-main:${phase}`,
+      {
+        temperature: 0.4,
+        // 主改写输出整份 sections JSON，显式加大上限；追问阶段同样带上以免默认偏紧
+        max_tokens: DEEPSEEK_LARGE_MAX_TOKENS,
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: isFinal ? SYSTEM_PROMPT_FINAL : SYSTEM_PROMPT_DEEPDIVE,
+          },
+          {
+            role: "user",
+            content: useSnapshotFinal
+              ? buildFinalPromptWithSnapshot(
                   jdText,
-                  experienceText,
                   resumeText,
                   clarifyingAnswers,
+                  experiencesSnapshot,
+                  enhanceMap,
                 )
-              : buildDeepDivePrompt(jdText, experienceText, resumeText),
-        },
-      ],
-    });
+              : isFinal
+                ? buildFinalPrompt(
+                    jdText,
+                    experienceText,
+                    resumeText,
+                    clarifyingAnswers,
+                  )
+                : buildDeepDivePrompt(jdText, experienceText, resumeText),
+          },
+        ],
+      },
+    );
     const mainMs = Date.now() - tDeepseek;
     console.log(
-      `[timing][generate] deepseek main phase=${phase} useSnapshot=${useSnapshotFinal} ms=${mainMs}`,
+      `[timing][generate] deepseek main phase=${phase} useSnapshot=${useSnapshotFinal} ms=${mainMs} finish_reason=${completion.choices[0]?.finish_reason ?? "null"} completion_tokens=${completion.usage?.completion_tokens ?? "null"}`,
     );
     console.log(
       `[timing][generate] distill+main distillMs=${distillMsTotal} mainMs=${mainMs} sumMs=${distillMsTotal + mainMs}`,
