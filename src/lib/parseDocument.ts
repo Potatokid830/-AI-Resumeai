@@ -1,3 +1,4 @@
+import "@/lib/polyfills/mathSumPrecise";
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy } from "unpdf";
 import { fetchBlobBuffer } from "@/lib/fetchBlobBuffer";
