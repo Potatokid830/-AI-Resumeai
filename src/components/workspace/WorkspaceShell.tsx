@@ -34,6 +34,7 @@ type SessionPayload = {
   resumeFileName: string | null;
   assetUrls: GeneratePayload["assetUrls"];
   userNotes: string;
+  experiencesSnapshot: GeneratePayload["experiencesSnapshot"];
   questions: string[];
 };
 
@@ -317,6 +318,7 @@ export default function WorkspaceShell() {
             resumeFileName: payload.resumeFileName,
             assetUrls: payload.assetUrls,
             userNotes: payload.userNotes,
+            experiencesSnapshot: payload.experiencesSnapshot,
             questions: data.clarifyingQuestions,
           };
 
@@ -387,6 +389,7 @@ export default function WorkspaceShell() {
             resumeFileName: session.resumeFileName,
             assetUrls: session.assetUrls,
             userNotes: session.userNotes,
+            experiencesSnapshot: session.experiencesSnapshot,
           },
           isFinal: true,
           clarifyingAnswers,

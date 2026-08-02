@@ -52,3 +52,22 @@ export type ClarifyingAnswer = {
   question: string;
   answer: string;
 };
+
+/** 阶段1：parse-experiences 切出的经历（id 由服务端顺序号写死） */
+export type ParsedExperienceType =
+  | "experience"
+  | "project"
+  | "education"
+  | "other";
+
+export type ParsedExperience = {
+  id: string;
+  title: string;
+  /** 该段完整原文，阶段2增强直接用此快照，禁止二次切段 */
+  original: string;
+  type: ParsedExperienceType;
+};
+
+export type ParseExperiencesResponse = {
+  experiences: ParsedExperience[];
+};

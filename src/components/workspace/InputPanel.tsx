@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Clapperboard, LoaderCircle, Sparkles } from "lucide-react";
+import type { ParsedExperience } from "@/lib/generateTypes";
 import FileDropzone, { type UploadedFile } from "./FileDropzone";
 import ResumeUpload, { type ResumeUploadState } from "./ResumeUpload";
 
@@ -24,7 +25,14 @@ export type GeneratePayload = {
   assetUrls: GenerateAssetRef[];
   /** 补充说明原文，供作品集管线使用 */
   userNotes: string;
+  /**
+   * 阶段1 解析快照：阶段2 增强必须直接使用，禁止后端二次切段。
+   * P2 起与 assetBindings 一并提交。
+   */
+  experiencesSnapshot: ParsedExperience[];
 };
+
+type ParseStatus = "idle" | "loading" | "ready" | "error";
 
 type InputPanelProps = {
   isGenerating?: boolean;
@@ -78,6 +86,11 @@ export default function InputPanel({
   });
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [notes, setNotes] = useState("");
+  const [experiences, setExperiences] = useState<ParsedExperience[]>([]);
+  const [parseStatus, setParseStatus] = useState<ParseStatus>("idle");
+  const [parseError, setParseError] = useState<string | null>(null);
+  const parsedResumeUrlRef = useRef<string | null>(null);
+  const parseAbortRef = useRef<AbortController | null>(null);
 
   const busy = isGenerating || isAnalyzingPortfolio;
 
@@ -96,6 +109,89 @@ export default function InputPanel({
       ),
     [files],
   );
+
+  const parseExperiences = async (resumeUrl: string, resumeFileName: string) => {
+    parseAbortRef.current?.abort();
+    const controller = new AbortController();
+    parseAbortRef.current = controller;
+
+    setParseStatus("loading");
+    setParseError(null);
+    setExperiences([]);
+
+    try {
+      const response = await fetch("/api/parse-experiences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          resumeUrl,
+          resumeFileName,
+          jdText: jd.trim(),
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as {
+        experiences?: ParsedExperience[];
+        error?: string;
+        detail?: string;
+      } | null;
+
+      if (!response.ok) {
+        const detail = payload?.detail ? `：${payload.detail}` : "";
+        throw new Error(
+          `${payload?.error ?? `解析失败（${response.status}）`}${detail}`,
+        );
+      }
+
+      const list = Array.isArray(payload?.experiences)
+        ? payload.experiences
+        : [];
+      if (!list.length) {
+        throw new Error("未识别到经历段落");
+      }
+
+      setExperiences(list);
+      setParseStatus("ready");
+      parsedResumeUrlRef.current = resumeUrl;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setExperiences([]);
+      setParseStatus("error");
+      setParseError(
+        err instanceof Error && err.message
+          ? err.message
+          : "解析经历失败，请重试",
+      );
+      parsedResumeUrlRef.current = null;
+    }
+  };
+
+  // 简历直传成功后自动切段；换简历则清空旧快照并重新解析
+  useEffect(() => {
+    if (resumeState.status !== "ready") {
+      if (resumeState.status === "idle" || resumeState.status === "uploading") {
+        parseAbortRef.current?.abort();
+        setExperiences([]);
+        setParseStatus("idle");
+        setParseError(null);
+        parsedResumeUrlRef.current = null;
+      }
+      return;
+    }
+
+    const { url, name } = resumeState.asset;
+    if (parsedResumeUrlRef.current === url && parseStatus === "ready") {
+      return;
+    }
+
+    void parseExperiences(url, name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在简历 ready/url 变化时触发；JD 变更不强制重切
+  }, [resumeState]);
+
+  useEffect(() => {
+    return () => parseAbortRef.current?.abort();
+  }, []);
 
   const buildPayload = (): GeneratePayload => {
     const resumeUrl =
@@ -118,6 +214,7 @@ export default function InputPanel({
       resumeFileName,
       assetUrls,
       userNotes: notes.trim(),
+      experiencesSnapshot: experiences,
     };
   };
 
@@ -156,6 +253,63 @@ export default function InputPanel({
               onStateChange={setResumeState}
               disabled={busy}
             />
+
+            {resumeState.status === "ready" && (
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-3">
+                {parseStatus === "loading" && (
+                  <p className="flex items-center gap-2 text-[12.5px] text-zinc-400">
+                    <LoaderCircle
+                      className="h-3.5 w-3.5 animate-spin"
+                      strokeWidth={1.75}
+                    />
+                    正在解析简历经历，供作品配对…
+                  </p>
+                )}
+                {parseStatus === "error" && (
+                  <div className="space-y-2">
+                    <p className="text-[12.5px] leading-relaxed text-amber-200/85">
+                      {parseError || "解析经历失败"}
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        if (resumeState.status === "ready") {
+                          void parseExperiences(
+                            resumeState.asset.url,
+                            resumeState.asset.name,
+                          );
+                        }
+                      }}
+                      className="text-[12px] font-medium text-zinc-300 underline-offset-2 hover:text-white hover:underline disabled:opacity-50"
+                    >
+                      重试解析
+                    </button>
+                  </div>
+                )}
+                {parseStatus === "ready" && experiences.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[12px] text-zinc-400">
+                      已识别 {experiences.length}{" "}
+                      段经历（将作为增强快照，阶段2不再二次切段）
+                    </p>
+                    <ol className="space-y-1.5">
+                      {experiences.map((exp) => (
+                        <li
+                          key={exp.id}
+                          className="flex items-start gap-2 text-[12.5px] leading-snug text-zinc-300"
+                        >
+                          <span className="shrink-0 font-mono text-[11px] text-zinc-500">
+                            {exp.id}
+                          </span>
+                          <span className="min-w-0 truncate">{exp.title}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">

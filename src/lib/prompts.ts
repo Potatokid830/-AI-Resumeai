@@ -159,6 +159,28 @@ ${FINAL_TAIL}`;
 export const PORTFOLIO_STAR_SYSTEM = `${SYSTEM_PROMPT_HR_CORE}
 ${PORTFOLIO_STAR_TAIL}`;
 
+/** 阶段1：只切分经历列表，不做改写（id 由服务端生成） */
+export const SYSTEM_PROMPT_PARSE_EXPERIENCES = `你是简历切段助手。任务是从简历全文中识别并切出独立的工作/实习/项目经历段落,供后续配对与增强使用。
+
+规则:
+1. 只切分,不改写、不润色、不摘要。
+2. 每段 original 必须完整照抄该段在简历中的全部原文(含所有 bullet 子项),一个字都不能删减或概括。
+3. title 用简短可读标题(如「公司名 · 职位」或项目名)。
+4. type 只能是 experience / project / education / other。
+5. 不要输出 id 字段(服务端会按顺序生成)。
+6. 不要编造简历里没有的经历。教育背景若需单独成段可用 education;技能列表不要拆成多条经历。
+
+只返回合法 JSON(不要 Markdown):
+{
+  "experiences": [
+    {
+      "title": string,
+      "original": string,
+      "type": "experience"|"project"|"education"|"other"
+    }
+  ]
+}`;
+
 export const VISION_PROMPT = `你是一位细致、诚实的作品观察员。请审阅这份作品,记录你从中【实际看到】的具体内容,供后续简历改写使用。
 
 请客观描述:这个作品是什么类型、它在做什么、你能看到的具体创作决策(如构图、配色、剪辑节奏、文案口号、信息结构等)。只写你真的从作品里观察到的东西。
