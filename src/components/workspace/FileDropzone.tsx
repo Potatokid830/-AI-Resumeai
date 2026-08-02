@@ -337,7 +337,8 @@ export default function FileDropzone({
               : "拖拽大文件至此，将直传 Vercel Blob（绕过 4.5MB 限制）"}
           </p>
           <p className="mt-2 text-[11px] text-zinc-600">
-            pdf / pptx / docx / xlsx / csv / 视频 / 图片 · 最大 100MB
+            pdf / pptx / docx / xlsx / csv / 视频 / 图片 · 最大 100MB ·
+            作品最多处理 2 个
           </p>
         </motion.div>
       </motion.div>

@@ -165,14 +165,203 @@ const PORTFOLIO_PIPELINE = [
   },
 ] as const;
 
+type ProgressStage = {
+  id: string;
+  label: string;
+  /** 该阶段预计停留时长 */
+  durationMs: number;
+  /** 阶段结束时进度应到达的百分比（≤ HOLD_CAP） */
+  endProgress: number;
+};
+
+const PROGRESS_HOLD_CAP = 90;
+
+function buildGenerateStages(
+  hasPortfolioAssets: boolean,
+  flow: "final" | "deepdive",
+): ProgressStage[] {
+  const rewriteLabel =
+    flow === "deepdive"
+      ? "正在分析岗位匹配与缺口…"
+      : "正在按目标岗位重写经历…";
+
+  if (hasPortfolioAssets) {
+    // 对齐实测：解析快 → 作品数秒 → 主改写约 20s → 收尾；总节奏约 32s 到 90%
+    return [
+      { id: "parse", label: "正在解析简历…", durationMs: 900, endProgress: 8 },
+      {
+        id: "assets",
+        label: "正在分析你的作品…",
+        durationMs: 7_500,
+        endProgress: 36,
+      },
+      {
+        id: "rewrite",
+        label: rewriteLabel,
+        durationMs: 20_000,
+        endProgress: 82,
+      },
+      {
+        id: "finishing",
+        label: "即将完成…",
+        durationMs: 3_500,
+        endProgress: PROGRESS_HOLD_CAP,
+      },
+    ];
+  }
+
+  // 无作品：约 20s，跳过作品阶段
+  return [
+    { id: "parse", label: "正在解析简历…", durationMs: 800, endProgress: 10 },
+    {
+      id: "rewrite",
+      label: rewriteLabel,
+      durationMs: 16_000,
+      endProgress: 82,
+    },
+    {
+      id: "finishing",
+      label: "即将完成…",
+      durationMs: 3_000,
+      endProgress: PROGRESS_HOLD_CAP,
+    },
+  ];
+}
+
+function GenerateProgressLoading({
+  hasPortfolioAssets,
+  loadingFlow,
+  complete,
+}: {
+  hasPortfolioAssets: boolean;
+  loadingFlow: "final" | "deepdive";
+  /** 结果已返回：跳到 100% 并清定时器 */
+  complete: boolean;
+}) {
+  const [progress, setProgress] = useState(0);
+  const [label, setLabel] = useState("正在解析简历…");
+  const startRef = useRef(Date.now());
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (complete) {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      setProgress(100);
+      setLabel("即将完成…");
+      return;
+    }
+
+    const stages = buildGenerateStages(hasPortfolioAssets, loadingFlow);
+    startRef.current = Date.now();
+    setProgress(0);
+    setLabel(stages[0]?.label ?? "正在准备…");
+
+    const tick = () => {
+      const elapsed = Date.now() - startRef.current;
+      let cursor = 0;
+      let prevEnd = 0;
+      let nextProgress = 0;
+      let nextLabel = stages[0]?.label ?? "正在准备…";
+
+      for (let i = 0; i < stages.length; i++) {
+        const stage = stages[i];
+        const stageEnd = cursor + stage.durationMs;
+        if (elapsed < stageEnd || i === stages.length - 1) {
+          const t = Math.min(
+            1,
+            Math.max(0, (elapsed - cursor) / stage.durationMs),
+          );
+          nextProgress = prevEnd + (stage.endProgress - prevEnd) * t;
+          nextLabel = stage.label;
+          // 最后阶段走完后停在 HOLD_CAP，绝不爬到 99
+          if (i === stages.length - 1 && t >= 1) {
+            nextProgress = PROGRESS_HOLD_CAP;
+          }
+          break;
+        }
+        cursor = stageEnd;
+        prevEnd = stage.endProgress;
+      }
+
+      setProgress(Math.min(PROGRESS_HOLD_CAP, nextProgress));
+      setLabel(nextLabel);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+  }, [complete, hasPortfolioAssets, loadingFlow]);
+
+  const display = complete ? 100 : progress;
+
+  return (
+    <motion.div
+      key="loading-generate-progress"
+      {...panelMotion}
+      className="flex w-full max-w-lg flex-col gap-5 px-2"
+    >
+      <div className="flex items-center gap-2 text-sm text-zinc-400">
+        <Sparkles
+          className="h-4 w-4 animate-pulse text-zinc-300"
+          strokeWidth={1.75}
+        />
+        <span className="relative overflow-hidden">
+          <span className="animate-[shimmer_2s_linear_infinite] bg-[linear-gradient(90deg,rgba(161,161,170,0.45)_0%,rgba(250,250,250,0.95)_45%,rgba(161,161,170,0.45)_100%)] bg-[length:200%_100%] bg-clip-text text-transparent">
+            {label}
+          </span>
+        </span>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-white/[0.07] bg-zinc-950/40 p-5 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+        <div className="flex items-center justify-between text-[11px] text-zinc-500">
+          <span>生成进度</span>
+          <span className="tabular-nums text-zinc-400">
+            {Math.round(display)}%
+          </span>
+        </div>
+        <div
+          className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(display)}
+          aria-label={label}
+        >
+          <motion.div
+            className="h-full rounded-full bg-gradient-to-r from-zinc-400/80 via-zinc-100 to-zinc-300"
+            initial={false}
+            animate={{ width: `${display}%` }}
+            transition={
+              complete
+                ? { duration: 0.22, ease: "easeOut" }
+                : { duration: 0.15, ease: "linear" }
+            }
+          />
+        </div>
+        <p className="text-[12px] leading-relaxed text-zinc-500">{label}</p>
+      </div>
+    </motion.div>
+  );
+}
+
 function LoadingState({
   hint,
   variant = "default",
   portfolioStep = 0,
+  hasPortfolioAssets = false,
+  loadingFlow = "final",
+  complete = false,
 }: {
   hint: string;
   variant?: "default" | "portfolio";
   portfolioStep?: number;
+  hasPortfolioAssets?: boolean;
+  loadingFlow?: "final" | "deepdive";
+  complete?: boolean;
 }) {
   const isPortfolio = variant === "portfolio";
   const activeStep = Math.min(
@@ -180,105 +369,106 @@ function LoadingState({
     Math.max(0, portfolioStep),
   );
 
+  if (!isPortfolio) {
+    return (
+      <GenerateProgressLoading
+        hasPortfolioAssets={hasPortfolioAssets}
+        loadingFlow={loadingFlow}
+        complete={complete}
+      />
+    );
+  }
+
   return (
     <motion.div
-      key={isPortfolio ? "loading-portfolio" : "loading"}
+      key="loading-portfolio"
       {...panelMotion}
       className="flex w-full max-w-lg flex-col gap-5 px-2"
     >
       <div className="flex items-center gap-2 text-sm text-zinc-400">
         <Sparkles
-          className={`h-4 w-4 animate-pulse ${isPortfolio ? "text-amber-200" : "text-zinc-300"}`}
+          className="h-4 w-4 animate-pulse text-amber-200"
           strokeWidth={1.75}
         />
         <span className="relative overflow-hidden">
           <span className="animate-[shimmer_2s_linear_infinite] bg-[linear-gradient(90deg,rgba(161,161,170,0.45)_0%,rgba(250,250,250,0.95)_45%,rgba(161,161,170,0.45)_100%)] bg-[length:200%_100%] bg-clip-text text-transparent">
-            {isPortfolio ? PORTFOLIO_PIPELINE[activeStep].detail : hint}
+            {PORTFOLIO_PIPELINE[activeStep].detail}
           </span>
         </span>
       </div>
 
-      {isPortfolio ? (
-        <div className="relative overflow-hidden rounded-2xl border border-amber-200/15 bg-zinc-950/50 p-5 shadow-[0_20px_60px_-40px_rgba(251,191,36,0.35)] backdrop-blur-xl">
-          <div className="mb-4 flex items-center justify-between text-[11px] tracking-[0.14em] text-zinc-500 uppercase">
-            <span>Dual-Engine Pipeline</span>
-            <span className="text-amber-200/70">
-              STAGE {activeStep + 1}/{PORTFOLIO_PIPELINE.length}
-            </span>
-          </div>
+      <div className="relative overflow-hidden rounded-2xl border border-amber-200/15 bg-zinc-950/50 p-5 shadow-[0_20px_60px_-40px_rgba(251,191,36,0.35)] backdrop-blur-xl">
+        <div className="mb-4 flex items-center justify-between text-[11px] tracking-[0.14em] text-zinc-500 uppercase">
+          <span>Dual-Engine Pipeline</span>
+          <span className="text-amber-200/70">
+            STAGE {activeStep + 1}/{PORTFOLIO_PIPELINE.length}
+          </span>
+        </div>
 
-          <ol className="mb-5 space-y-2">
-            {PORTFOLIO_PIPELINE.map((step, index) => {
-              const done = index < activeStep;
-              const active = index === activeStep;
-              return (
-                <li
-                  key={step.id}
-                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 text-[12.5px] ${
+        <ol className="mb-5 space-y-2">
+          {PORTFOLIO_PIPELINE.map((step, index) => {
+            const done = index < activeStep;
+            const active = index === activeStep;
+            return (
+              <li
+                key={step.id}
+                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 text-[12.5px] ${
+                  active
+                    ? "border-amber-200/25 bg-amber-100/[0.06] text-amber-50"
+                    : done
+                      ? "border-white/[0.06] bg-white/[0.02] text-zinc-400"
+                      : "border-white/[0.04] text-zinc-600"
+                }`}
+              >
+                <span
+                  className={`inline-flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-medium ${
                     active
-                      ? "border-amber-200/25 bg-amber-100/[0.06] text-amber-50"
+                      ? "bg-amber-200/20 text-amber-100"
                       : done
-                        ? "border-white/[0.06] bg-white/[0.02] text-zinc-400"
-                        : "border-white/[0.04] text-zinc-600"
+                        ? "bg-emerald-400/15 text-emerald-300"
+                        : "bg-white/[0.04] text-zinc-600"
                   }`}
                 >
-                  <span
-                    className={`inline-flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-medium ${
-                      active
-                        ? "bg-amber-200/20 text-amber-100"
-                        : done
-                          ? "bg-emerald-400/15 text-emerald-300"
-                          : "bg-white/[0.04] text-zinc-600"
-                    }`}
-                  >
-                    {done ? "✓" : index + 1}
-                  </span>
-                  <span className="font-medium tracking-tight">{step.label}</span>
-                  {active && (
-                    <LoaderCircle
-                      className="ml-auto h-3.5 w-3.5 animate-spin text-amber-200/80"
-                      strokeWidth={1.75}
-                    />
-                  )}
-                </li>
-              );
-            })}
-          </ol>
+                  {done ? "✓" : index + 1}
+                </span>
+                <span className="font-medium tracking-tight">{step.label}</span>
+                {active && (
+                  <LoaderCircle
+                    className="ml-auto h-3.5 w-3.5 animate-spin text-amber-200/80"
+                    strokeWidth={1.75}
+                  />
+                )}
+              </li>
+            );
+          })}
+        </ol>
 
-          <div className="grid grid-cols-6 gap-1.5">
-            {Array.from({ length: 12 }).map((_, index) => (
-              <motion.div
-                key={index}
-                className="aspect-video rounded-md bg-gradient-to-br from-zinc-800 to-zinc-900"
-                animate={{
-                  opacity: [0.25, 0.9, 0.35],
-                  scale: [1, 1.02, 1],
-                }}
-                transition={{
-                  duration: 1.4,
-                  repeat: Infinity,
-                  delay: index * 0.12,
-                  ease: "easeInOut",
-                }}
-              />
-            ))}
-          </div>
-          <p className="mt-4 font-mono text-[11px] leading-relaxed text-zinc-500">
-            <span className="text-amber-200/80">$</span> gemini.review | deepseek.star
-            --portfolio
-          </p>
+        <div className="grid grid-cols-6 gap-1.5">
+          {Array.from({ length: 12 }).map((_, index) => (
+            <motion.div
+              key={index}
+              className="aspect-video rounded-md bg-gradient-to-br from-zinc-800 to-zinc-900"
+              animate={{
+                opacity: [0.25, 0.9, 0.35],
+                scale: [1, 1.02, 1],
+              }}
+              transition={{
+                duration: 1.4,
+                repeat: Infinity,
+                delay: index * 0.12,
+                ease: "easeInOut",
+              }}
+            />
+          ))}
         </div>
-      ) : (
-        <div className="space-y-3 rounded-2xl border border-white/[0.07] bg-zinc-950/40 p-5 shadow-[0_20px_60px_-40px_rgba(0,0,0,0.8)] backdrop-blur-xl">
-          <div className="h-3 w-1/3 animate-pulse rounded-md bg-white/[0.08]" />
-          <div className="h-2.5 w-1/2 animate-pulse rounded-md bg-white/[0.05]" />
-          <div className="mt-4 space-y-2.5">
-            <div className="h-2.5 w-full animate-pulse rounded-md bg-white/[0.06]" />
-            <div className="h-2.5 w-[92%] animate-pulse rounded-md bg-white/[0.05]" />
-            <div className="h-2.5 w-[85%] animate-pulse rounded-md bg-white/[0.04]" />
-          </div>
-        </div>
-      )}
+        <p className="mt-4 font-mono text-[11px] leading-relaxed text-zinc-500">
+          <span className="text-amber-200/80">$</span> gemini.review | deepseek.star
+          --portfolio
+        </p>
+        {hint ? (
+          <p className="mt-2 text-[11px] text-zinc-600">{hint}</p>
+        ) : null}
+      </div>
     </motion.div>
   );
 }
@@ -545,6 +735,10 @@ type OutputPanelProps = {
   loadingHint?: string;
   loadingVariant?: "default" | "portfolio";
   portfolioStep?: number;
+  /** 本次生成是否带作品（决定是否显示「分析作品」阶段） */
+  loadingHasAssets?: boolean;
+  /** final=主改写节奏；deepdive=追问阶段（文案略不同） */
+  loadingFlow?: "final" | "deepdive";
   contentUnlocked?: boolean;
   onDeepDiveSubmit?: (answers: string[]) => void;
   onDeepDiveSkip?: () => void;
@@ -559,15 +753,34 @@ export default function OutputPanel({
   loadingHint = "AI 正在对齐 JD 关键词...",
   loadingVariant = "default",
   portfolioStep = 0,
+  loadingHasAssets = false,
+  loadingFlow = "final",
   contentUnlocked = false,
   onDeepDiveSubmit,
   onDeepDiveSkip,
   onUnlockRequest,
   onRegisterExport,
 }: OutputPanelProps) {
+  const prevStatusRef = useRef(status);
+  const [exitFlash, setExitFlash] = useState(false);
+
+  // status 离开 loading：先闪到 100%，再切换到结果/追问页
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status;
+    if (prev === "loading" && status !== "loading") {
+      setExitFlash(true);
+      const timer = window.setTimeout(() => setExitFlash(false), 320);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [status]);
+
+  const showLoading = status === "loading" || exitFlash;
   const showTopAligned =
-    (status === "result" && Boolean(result?.sections?.length)) ||
-    (status === "deepdive" && Boolean(result));
+    !showLoading &&
+    ((status === "result" && Boolean(result?.sections?.length)) ||
+      (status === "deepdive" && Boolean(result)));
 
   return (
     <section className="relative flex min-h-0 flex-col bg-zinc-900/40">
@@ -581,15 +794,18 @@ export default function OutputPanel({
         }`}
       >
         <AnimatePresence mode="wait">
-          {status === "idle" && <EmptyState error={error} />}
-          {status === "loading" && (
+          {status === "idle" && !exitFlash && <EmptyState error={error} />}
+          {showLoading && (
             <LoadingState
               hint={loadingHint}
               variant={loadingVariant}
               portfolioStep={portfolioStep}
+              hasPortfolioAssets={loadingHasAssets}
+              loadingFlow={loadingFlow}
+              complete={exitFlash}
             />
           )}
-          {status === "deepdive" && result && (
+          {status === "deepdive" && result && !showLoading && (
             <DeepDivePanel
               questions={result.clarifyingQuestions}
               gapAnalysis={result.gapAnalysis}
@@ -599,7 +815,7 @@ export default function OutputPanel({
               onSkip={() => onDeepDiveSkip?.()}
             />
           )}
-          {status === "result" && result && (
+          {status === "result" && result && !showLoading && (
             <ResultState
               result={result}
               contentUnlocked={contentUnlocked}

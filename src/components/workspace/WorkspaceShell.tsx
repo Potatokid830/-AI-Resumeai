@@ -76,6 +76,10 @@ export default function WorkspaceShell() {
   const [loadingVariant, setLoadingVariant] = useState<"default" | "portfolio">(
     "default",
   );
+  const [loadingHasAssets, setLoadingHasAssets] = useState(false);
+  const [loadingFlow, setLoadingFlow] = useState<"final" | "deepdive">(
+    "final",
+  );
   const [portfolioStep, setPortfolioStep] = useState(0);
   const [isAnalyzingPortfolio, setIsAnalyzingPortfolio] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -302,6 +306,10 @@ export default function WorkspaceShell() {
       refreshUnlockState();
       setIsAnalyzingPortfolio(false);
       setLoadingVariant("default");
+      setLoadingHasAssets(
+        (payload.assetBindings?.length ?? 0) > 0 ||
+          (payload.assetUrls?.length ?? 0) > 0,
+      );
       setError(null);
       setStatus("loading");
       setResult(null);
@@ -309,6 +317,7 @@ export default function WorkspaceShell() {
       try {
         if (isVip()) {
           // VIP：两步深挖（Gap 不计费）
+          setLoadingFlow("deepdive");
           setLoadingHint("AI 正在做 Gap 分析并准备追问...");
           const data = await requestGenerate({
             payload,
@@ -336,6 +345,7 @@ export default function WorkspaceShell() {
         }
 
         // Freemium：跳过追问，一次性基础版重组 → 直接出结果
+        setLoadingFlow("final");
         setLoadingHint("AI 正在重组基础版简历...");
         const data = await requestGenerate({
           payload,
@@ -382,6 +392,11 @@ export default function WorkspaceShell() {
         }),
       );
 
+      setLoadingFlow("final");
+      setLoadingHasAssets(
+        (session.assetBindings?.length ?? 0) > 0 ||
+          (session.assetUrls?.length ?? 0) > 0,
+      );
       setLoadingHint("正在把细节揉进终版 STAR...");
       setStatus("loading");
 
@@ -524,6 +539,8 @@ export default function WorkspaceShell() {
           loadingHint={loadingHint}
           loadingVariant={loadingVariant}
           portfolioStep={portfolioStep}
+          loadingHasAssets={loadingHasAssets}
+          loadingFlow={loadingFlow}
           contentUnlocked={contentUnlocked}
           onDeepDiveSubmit={handleDeepDiveSubmit}
           onDeepDiveSkip={handleDeepDiveSkip}
