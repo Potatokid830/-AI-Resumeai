@@ -24,6 +24,8 @@ export type ResumeSectionItem = {
   source: ResumeItemSource;
   /** 仅 portfolio：如「基于作品集《xxx》提炼」 */
   sourceLabel?: string;
+  /** 代码盖章：用哪些作品文件增强了这条 resume 经历 */
+  enhancedBy?: string[];
 };
 
 export type ResumeSection = {

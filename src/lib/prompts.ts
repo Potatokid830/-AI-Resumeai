@@ -159,6 +159,18 @@ ${FINAL_TAIL}`;
 export const PORTFOLIO_STAR_SYSTEM = `${SYSTEM_PROMPT_HR_CORE}
 ${PORTFOLIO_STAR_TAIL}`;
 
+/**
+ * 作品增强已有经历（附加在终版 user 中有作品洞察的经历块上）。
+ * 不改动 HR_CORE / 终版尾巴正文。
+ */
+export const PROMPT_ENHANCE_WITH_PORTFOLIO = `【作品增强指令】
+你将看到「简历原经历」以及用户配对到该经历的「作品洞察」。
+请以简历原经历为基础改写 revised / revisedHtml,把作品洞察里【确实存在】的真实细节自然融入。
+红线:
+- 作品洞察里没有的信息绝对不编造。
+- 若作品内容与该经历明显无关(用户可能配错),不要硬塞作品细节;按原经历正常改写,并在 changeReason 中提示「作品与此经历关联不明显」。
+- item.id 必须与给定的经历 id 完全一致;original 字段请原样回传给定原文(服务端会再强制覆盖)。`;
+
 /** 阶段1：只切分经历列表，不做改写（id 由服务端生成） */
 export const SYSTEM_PROMPT_PARSE_EXPERIENCES = `你是简历切段助手。任务是从简历全文中识别并切出【真正的经历】段落,供后续配对与增强使用。
 

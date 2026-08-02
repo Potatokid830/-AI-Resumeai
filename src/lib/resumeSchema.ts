@@ -1,6 +1,7 @@
 import type {
   GenerateApiResponse,
   GeneratePhase,
+  ParsedExperience,
   ResumeItemSource,
   ResumeItemStatus,
   ResumeRelevance,
@@ -114,6 +115,12 @@ function normalizeItem(
     asString(row.revisedHtml) ||
     (revised ? revised.replace(/</g, "&lt;").replace(/>/g, "&gt;") : "");
 
+  const enhancedBy = Array.isArray(row.enhancedBy)
+    ? row.enhancedBy.filter(
+        (name): name is string => typeof name === "string" && name.trim().length > 0,
+      )
+    : undefined;
+
   const base: ResumeSectionItem = {
     id,
     original,
@@ -124,6 +131,7 @@ function normalizeItem(
     relevanceToJd,
     deepDivePrompts,
     source: itemSource,
+    ...(enhancedBy?.length ? { enhancedBy } : {}),
   };
 
   return base;
@@ -231,4 +239,45 @@ export function normalizeGenerateResponse(
 export function buildPortfolioSourceLabel(fileName: string): string {
   const base = fileName.replace(/\.[^.]+$/, "").trim() || fileName.trim() || "未命名作品集";
   return `基于作品集《${base}》提炼`;
+}
+
+/**
+ * 用 experiencesSnapshot 强制盖章 resume 项的 id/original，并写入 enhancedBy。
+ * 保证配对经历与被增强经历为同一条。
+ */
+export function applyExperienceSnapshotStamps(
+  response: GenerateApiResponse,
+  snapshot: ParsedExperience[],
+  enhancedByMap: Record<string, string[]>,
+): GenerateApiResponse {
+  if (!response.sections?.length || !snapshot.length) return response;
+
+  const used = new Set<string>();
+
+  const sections = response.sections.map((section) => ({
+    ...section,
+    items: section.items.map((item) => {
+      if (item.source === "portfolio") return item;
+
+      let snap =
+        snapshot.find((s) => s.id === item.id && !used.has(s.id)) ??
+        snapshot.find((s) => !used.has(s.id));
+
+      if (!snap) {
+        return { ...item, source: "resume" as const };
+      }
+
+      used.add(snap.id);
+      const enhancedBy = enhancedByMap[snap.id]?.filter(Boolean);
+      return {
+        ...item,
+        id: snap.id,
+        original: snap.original,
+        source: "resume" as const,
+        enhancedBy: enhancedBy?.length ? enhancedBy : undefined,
+      };
+    }),
+  }));
+
+  return { ...response, sections };
 }

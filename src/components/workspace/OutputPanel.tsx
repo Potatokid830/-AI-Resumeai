@@ -77,13 +77,27 @@ function PortfolioItemBlock({ item }: { item: ResumeSectionItem }) {
   );
 }
 
+function formatEnhancedByLabel(names: string[]) {
+  if (!names.length) return "";
+  if (names.length === 1) return `📎 已用作品《${names[0]}》增强`;
+  return `📎 已用作品《${names[0]}》等 ${names.length} 个文件增强`;
+}
+
 function ResumeItemBlock({ item }: { item: ResumeSectionItem }) {
   if (item.source === "portfolio") {
     return <PortfolioItemBlock item={item} />;
   }
 
+  const enhancedLabel =
+    item.enhancedBy?.length ? formatEnhancedByLabel(item.enhancedBy) : "";
+
   return (
     <div className="space-y-3 rounded-xl border border-zinc-200/80 bg-white/60 p-4">
+      {enhancedLabel ? (
+        <p className="text-[12.5px] font-medium tracking-tight text-emerald-800/90">
+          {enhancedLabel}
+        </p>
+      ) : null}
       <div>
         <p className="text-[11px] font-medium tracking-[0.12em] text-zinc-500 uppercase">
           原文

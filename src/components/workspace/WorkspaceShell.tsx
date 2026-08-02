@@ -21,7 +21,7 @@ import OutputPanel from "./OutputPanel";
 import Toast from "./Toast";
 import type { WorkspaceStatus } from "./types";
 
-const REQUEST_TIMEOUT_MS = 90_000;
+const REQUEST_TIMEOUT_MS = 120_000;
 const PORTFOLIO_TIMEOUT_MS = 120_000;
 /** Gemini 视觉阶段展示时长后切到 DeepSeek 文案 */
 const PORTFOLIO_STAGE_FLIP_MS = 14_000;
@@ -161,11 +161,14 @@ export default function WorkspaceShell() {
           body: JSON.stringify({
             jdText: options.payload.jdText,
             experienceText: options.payload.experienceText,
+            userNotes: options.payload.userNotes,
             isFinal: options.isFinal,
             resumeUrl: options.payload.resumeUrl,
             resumeFileName: options.payload.resumeFileName,
             assetUrls: options.payload.assetUrls,
             clarifyingAnswers: options.clarifyingAnswers ?? [],
+            assetBindings: options.payload.assetBindings ?? [],
+            experiencesSnapshot: options.payload.experiencesSnapshot ?? [],
           }),
         });
 

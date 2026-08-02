@@ -1,24 +1,34 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import type {
+  AssetBinding,
   ClarifyingAnswer,
   GenerateApiResponse,
   GeneratePhase,
+  ParsedExperience,
+  ResumeSection,
 } from "@/lib/generateTypes";
 import {
   isTextExtractable,
   parseDocumentFromUrl,
 } from "@/lib/parseDocument";
 import {
+  PORTFOLIO_STAR_SYSTEM,
+  PROMPT_ENHANCE_WITH_PORTFOLIO,
   SYSTEM_PROMPT_DEEPDIVE,
   SYSTEM_PROMPT_FINAL,
 } from "@/lib/prompts";
+import { readAssetInsight, type AssetInsight } from "@/lib/readAssetInsight";
 import {
+  applyExperienceSnapshotStamps,
+  buildPortfolioSourceLabel,
   isValidFinalSections,
   normalizeGenerateResponse,
 } from "@/lib/resumeSchema";
 
 export const runtime = "nodejs";
+/** 终版可能读视频 / 多作品，放宽超时 */
+export const maxDuration = 120;
 
 function getDeepSeekClient() {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -80,6 +90,71 @@ ${qa}
 `;
 }
 
+function buildFinalPromptWithSnapshot(
+  jdText: string,
+  resumeText: string,
+  answers: ClarifyingAnswer[],
+  snapshot: ParsedExperience[],
+  enhanceMap: Map<string, AssetInsight[]>,
+) {
+  const qa =
+    answers.length > 0
+      ? answers
+          .map(
+            (item, index) =>
+              `Q${index + 1}: ${item.question}\nA${index + 1}: ${item.answer || "（用户未作答）"}`,
+          )
+          .join("\n\n")
+      : "（无补充回答）";
+
+  const experienceBlocks = snapshot
+    .map((exp) => {
+      const insights = enhanceMap.get(exp.id) ?? [];
+      const insightBlock =
+        insights.length > 0
+          ? `
+${PROMPT_ENHANCE_WITH_PORTFOLIO}
+
+### 配对作品洞察
+${insights
+  .map(
+    (ins, i) =>
+      `#### 作品 ${i + 1}：${ins.fileName}（引擎：${ins.engine}）\n${ins.insight}`,
+  )
+  .join("\n\n")}`
+          : "\n（本段无配对作品，按原经历正常改写即可。）";
+
+      return `### 经历 ${exp.id}
+- title: ${exp.title}
+- type: ${exp.type}
+- **item.id 必须输出为：${exp.id}**
+- original（须完整保留，勿删减）:
+"""
+${exp.original}
+"""
+${insightBlock}`;
+    })
+    .join("\n\n");
+
+  return `请输出整份简历 sections JSON。经历条目必须以下方「经历快照」为准：
+- 每条经历的 item.id 必须与快照 id 完全一致
+- original 请原样回传快照原文（服务端会再强制覆盖）
+- 有作品洞察的经历请遵循作品增强指令
+
+## 目标岗位描述 (JD)
+${jdText || "（未提供）"}
+
+## 原简历全文（供教育/技能等非经历段参考）
+${resumeText || "（未提供）"}
+
+## 经历快照（增强与改写的唯一依据，勿重新切段）
+${experienceBlocks || "（无）"}
+
+## 用户对追问的补充回答
+${qa}
+`;
+}
+
 function extractJsonPayload(content: string): unknown {
   const trimmed = content.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -108,6 +183,56 @@ function parseClarifyingAnswers(raw: string): ClarifyingAnswer[] {
   }
 }
 
+function parseExperiencesSnapshot(raw: unknown): ParsedExperience[] {
+  if (!Array.isArray(raw)) return [];
+  const list: ParsedExperience[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as Record<string, unknown>;
+    const id = typeof item.id === "string" ? item.id.trim() : "";
+    const original = typeof item.original === "string" ? item.original.trim() : "";
+    if (!id || !original) continue;
+    list.push({
+      id,
+      title:
+        typeof item.title === "string" && item.title.trim()
+          ? item.title.trim()
+          : id,
+      original,
+      type:
+        item.type === "project" ||
+        item.type === "education" ||
+        item.type === "other" ||
+        item.type === "experience"
+          ? item.type
+          : "experience",
+    });
+  }
+  return list;
+}
+
+function parseAssetBindings(raw: unknown): AssetBinding[] {
+  if (!Array.isArray(raw)) return [];
+  const list: AssetBinding[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as Record<string, unknown>;
+    const assetId = typeof item.assetId === "string" ? item.assetId : "";
+    const name = typeof item.name === "string" ? item.name : "";
+    const url = typeof item.url === "string" ? item.url : "";
+    const bindTo = typeof item.bindTo === "string" ? item.bindTo : "new";
+    if (!assetId || !url) continue;
+    list.push({
+      assetId,
+      name: name || "asset",
+      url,
+      size: typeof item.size === "number" ? item.size : 0,
+      bindTo,
+    });
+  }
+  return list;
+}
+
 function isValidDeepDive(data: unknown): data is GenerateApiResponse {
   if (!data || typeof data !== "object") return false;
   const value = data as GenerateApiResponse;
@@ -122,9 +247,10 @@ function isValidDeepDive(data: unknown): data is GenerateApiResponse {
 }
 
 function isValidFinal(data: unknown): data is GenerateApiResponse {
-  if (!data || typeof data !== "object") return false;
-  const value = data as GenerateApiResponse;
-  return value.phase === "result" && isValidFinalSections(data);
+  if (!isValidFinalSections(data)) return false;
+  const value = data as { phase?: string };
+  // 允许模型省略 phase；normalize 时会写回 result
+  return value.phase === "result" || value.phase === undefined;
 }
 
 function normalizeResponse(
@@ -143,12 +269,15 @@ type AssetUrlRef = {
 type GenerateRequestBody = {
   jdText?: string;
   experienceText?: string;
+  userNotes?: string;
   resumeText?: string;
   resumeUrl?: string | null;
   resumeFileName?: string | null;
   assetUrls?: AssetUrlRef[];
   isFinal?: boolean;
   clarifyingAnswers?: ClarifyingAnswer[] | string;
+  assetBindings?: AssetBinding[];
+  experiencesSnapshot?: ParsedExperience[];
 };
 
 async function enrichExperienceFromAssets(
@@ -174,6 +303,67 @@ async function enrichExperienceFromAssets(
 
   if (!extractedBlocks.length) return experienceText;
   return [experienceText, ...extractedBlocks].filter(Boolean).join("\n\n");
+}
+
+async function buildPortfolioSectionsFromNewAssets(
+  openai: OpenAI,
+  jdText: string,
+  userNotes: string,
+  newAssets: AssetInsight[],
+): Promise<ResumeSection[]> {
+  const sections: ResumeSection[] = [];
+
+  for (const asset of newAssets.slice(0, 4)) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+        temperature: 0.45,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: PORTFOLIO_STAR_SYSTEM },
+          {
+            role: "user",
+            content: `请将作品集洞察重写为 STAR 项目经历 JSON（sections/items）。original 可空。
+
+## 目标岗位 JD
+${jdText || "（未提供）"}
+
+## 用户简单描述
+${userNotes || "（无）"}
+
+## 文件信息
+- 文件名：${asset.fileName}
+- 视觉引擎：${asset.engine}
+
+## 作品洞察
+${asset.insight}
+`,
+          },
+        ],
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (!content) continue;
+      const parsed = extractJsonPayload(content);
+      if (!isValidFinalSections(parsed)) continue;
+
+      const normalized = normalizeGenerateResponse(
+        parsed as GenerateApiResponse,
+        "result",
+        {
+          itemSource: "portfolio",
+          portfolioLabel: buildPortfolioSourceLabel(asset.fileName),
+        },
+      );
+      if (normalized.sections?.length) {
+        sections.push(...normalized.sections);
+      }
+    } catch (error) {
+      console.warn("[generate] portfolio new-asset failed", asset.fileName, error);
+    }
+  }
+
+  return sections;
 }
 
 export async function POST(request: Request) {
@@ -206,6 +396,9 @@ export async function POST(request: Request) {
           : "",
       );
   const assetUrls = Array.isArray(body.assetUrls) ? body.assetUrls : [];
+  const assetBindings = parseAssetBindings(body.assetBindings);
+  const experiencesSnapshot = parseExperiencesSnapshot(body.experiencesSnapshot);
+  const userNotes = String(body.userNotes ?? "").slice(0, 2_000);
 
   // 从 Blob URL 拉取简历并解析纯文本
   if (resumeUrl) {
@@ -222,7 +415,7 @@ export async function POST(request: Request) {
       assetUrls,
     );
   } catch {
-    // 素材提取失败不阻断主流程，仍用前端附带的 url 文本
+    // 素材提取失败不阻断主流程
   }
 
   const openai = getDeepSeekClient();
@@ -235,7 +428,46 @@ export async function POST(request: Request) {
 
   const phase: GeneratePhase = isFinal ? "result" : "deepdive";
 
+  // —— 终版：按 assetBindings 读作品并分组（增强 / 新增）——
+  const enhanceMap = new Map<string, AssetInsight[]>();
+  const newAssets: AssetInsight[] = [];
+  const enhancedByMap: Record<string, string[]> = {};
+
+  if (isFinal && assetBindings.length > 0) {
+    const snapshotIds = new Set(experiencesSnapshot.map((e) => e.id));
+
+    for (const binding of assetBindings.slice(0, 8)) {
+      const insight = await readAssetInsight({
+        assetId: binding.assetId,
+        fileName: binding.name,
+        url: binding.url,
+        userNotes,
+      });
+
+      if (binding.bindTo === "new" || !snapshotIds.has(binding.bindTo)) {
+        if (binding.bindTo !== "new" && !snapshotIds.has(binding.bindTo)) {
+          console.warn(
+            "[generate] bindTo 不在 snapshot 中，降级为 new",
+            binding.bindTo,
+          );
+        }
+        newAssets.push(insight);
+        continue;
+      }
+
+      const list = enhanceMap.get(binding.bindTo) ?? [];
+      list.push(insight);
+      enhanceMap.set(binding.bindTo, list);
+      const names = enhancedByMap[binding.bindTo] ?? [];
+      names.push(binding.name);
+      enhancedByMap[binding.bindTo] = names;
+    }
+  }
+
   try {
+    const useSnapshotFinal =
+      isFinal && experiencesSnapshot.length > 0;
+
     const completion = await openai.chat.completions.create({
       model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
       temperature: 0.4,
@@ -247,14 +479,22 @@ export async function POST(request: Request) {
         },
         {
           role: "user",
-          content: isFinal
-            ? buildFinalPrompt(
+          content: useSnapshotFinal
+            ? buildFinalPromptWithSnapshot(
                 jdText,
-                experienceText,
                 resumeText,
                 clarifyingAnswers,
+                experiencesSnapshot,
+                enhanceMap,
               )
-            : buildDeepDivePrompt(jdText, experienceText, resumeText),
+            : isFinal
+              ? buildFinalPrompt(
+                  jdText,
+                  experienceText,
+                  resumeText,
+                  clarifyingAnswers,
+                )
+              : buildDeepDivePrompt(jdText, experienceText, resumeText),
         },
       ],
     });
@@ -276,7 +516,33 @@ export async function POST(request: Request) {
           { status: 502 },
         );
       }
-      return NextResponse.json(normalizeResponse(parsed, "result"));
+
+      let result = normalizeResponse(parsed, "result");
+
+      if (experiencesSnapshot.length > 0) {
+        result = applyExperienceSnapshotStamps(
+          result,
+          experiencesSnapshot,
+          enhancedByMap,
+        );
+      }
+
+      if (newAssets.length > 0) {
+        const portfolioSections = await buildPortfolioSectionsFromNewAssets(
+          openai,
+          jdText,
+          userNotes,
+          newAssets,
+        );
+        if (portfolioSections.length) {
+          result = {
+            ...result,
+            sections: [...(result.sections ?? []), ...portfolioSections],
+          };
+        }
+      }
+
+      return NextResponse.json(result);
     }
 
     if (!isValidDeepDive(parsed)) {
