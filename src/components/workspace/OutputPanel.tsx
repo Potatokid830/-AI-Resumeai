@@ -30,8 +30,10 @@ import AiInsights from "./AiInsights";
 import DeepDivePanel from "./DeepDivePanel";
 import EducationEnrichCard from "./EducationEnrichCard";
 import ExportResumeModal from "./ExportResumeModal";
+import ExportTypeModal, { type ExportPdfType } from "./ExportTypeModal";
 import MarkHtml from "./MarkHtml";
 import MatchScore from "./MatchScore";
+import PrintableComparison from "./PrintableComparison";
 import PrintableResume from "./PrintableResume";
 import Toast from "./Toast";
 import type { WorkspaceStatus } from "./types";
@@ -503,7 +505,6 @@ async function exportPrintablePdf(
   try {
     await new Promise<void>((resolve) => {
       root.render(<PrintableResume result={result} contact={contact} />);
-      // 等布局两帧，避免 html2canvas 抓到空节点
       requestAnimationFrame(() => {
         requestAnimationFrame(() => resolve());
       });
@@ -515,10 +516,8 @@ async function exportPrintablePdf(
     }
 
     const html2pdf = (await import("html2pdf.js")).default;
-    // html2pdf 类型缺 pagebreak；运行时支持 avoid-all/css/legacy
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const opts: any = {
-      // 边距由 PrintableResume 的 ~20mm padding 控制，避免双重留白
       margin: [0, 0, 0, 0],
       filename: "简历_投递版.pdf",
       image: { type: "jpeg", quality: 0.98 },
@@ -528,7 +527,52 @@ async function exportPrintablePdf(
         backgroundColor: "#ffffff",
       },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      // 尊重条目上的 page-break-inside: avoid，减少经历被拦腰切断
+      pagebreak: { mode: ["avoid-all", "css", "legacy"] },
+    };
+    await html2pdf().set(opts).from(sheet).save();
+  } finally {
+    root.unmount();
+    host.remove();
+  }
+}
+
+async function exportComparisonPdf(result: GenerateApiResponse) {
+  const host = document.createElement("div");
+  host.setAttribute("aria-hidden", "true");
+  host.style.position = "fixed";
+  host.style.left = "-10000px";
+  host.style.top = "0";
+  host.style.width = "210mm";
+  host.style.background = "#ffffff";
+  host.style.pointerEvents = "none";
+  document.body.appendChild(host);
+
+  const root = createRoot(host);
+  try {
+    await new Promise<void>((resolve) => {
+      root.render(<PrintableComparison result={result} />);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+
+    const sheet = host.querySelector(".printable-comparison-sheet");
+    if (!(sheet instanceof HTMLElement)) {
+      throw new Error("对照版节点未就绪");
+    }
+
+    const html2pdf = (await import("html2pdf.js")).default;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const opts: any = {
+      margin: [0, 0, 0, 0],
+      filename: "简历_对照版.pdf",
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["avoid-all", "css", "legacy"] },
     };
     await html2pdf().set(opts).from(sheet).save();
@@ -556,6 +600,7 @@ function ResultState({
   const sections = result.sections ?? [];
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportTypeOpen, setExportTypeOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [educationDismissed, setEducationDismissed] = useState(false);
@@ -595,8 +640,29 @@ function ResultState({
       return;
     }
     if (exporting) return;
-    setExportModalOpen(true);
+    setExportTypeOpen(true);
   }, [contentUnlocked, exporting, onUnlockRequest]);
+
+  const handleSelectExportType = useCallback(
+    async (type: ExportPdfType) => {
+      setExportTypeOpen(false);
+      if (type === "printable") {
+        setExportModalOpen(true);
+        return;
+      }
+
+      setExporting(true);
+      try {
+        await exportComparisonPdf(result);
+        showToast("对照版 PDF 已开始下载");
+      } catch {
+        showToast("对照版导出失败，请重试");
+      } finally {
+        setExporting(false);
+      }
+    },
+    [result, showToast],
+  );
 
   const handleConfirmExport = useCallback(
     async (contact: ResumeContact) => {
@@ -719,9 +785,17 @@ function ResultState({
           ) : (
             <FileDown className="h-3.5 w-3.5" strokeWidth={1.75} />
           )}
-          {exporting ? "导出中..." : "导出成品简历"}
+          {exporting ? "导出中..." : "导出 PDF"}
         </button>
       </div>
+
+      <ExportTypeModal
+        open={exportTypeOpen}
+        onClose={() => setExportTypeOpen(false)}
+        onSelect={(type) => {
+          void handleSelectExportType(type);
+        }}
+      />
 
       <ExportResumeModal
         open={exportModalOpen}

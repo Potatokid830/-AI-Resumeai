@@ -530,7 +530,7 @@ export default function WorkspaceShell() {
             !canExport
               ? "生成结果后可导出"
               : contentUnlocked
-                ? "导出成品简历"
+                ? "导出 PDF"
                 : "解锁后可导出"
           }
           onClick={handleNavExport}
@@ -541,7 +541,7 @@ export default function WorkspaceShell() {
           }`}
         >
           <FileDown className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
-          导出成品简历
+          导出 PDF
         </button>
       </header>
 
