@@ -437,6 +437,12 @@ export default function InputPanel({
             <button
               type="button"
               onClick={() => {
+                if (!jd.trim()) {
+                  const ok = window.confirm(
+                    "建议填写目标岗位 JD，否则改写效果会大打折扣。\n\n仍要继续生成吗？",
+                  );
+                  if (!ok) return;
+                }
                 void onGenerate?.(buildPayload());
               }}
               disabled={busy || isUploading}

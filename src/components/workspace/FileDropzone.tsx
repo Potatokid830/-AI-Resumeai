@@ -36,6 +36,8 @@ const ACCEPTED_EXTENSIONS = [
 ] as const;
 const ACCEPT_ATTR = ACCEPTED_EXTENSIONS.join(",");
 const MAX_BYTES = 100 * 1024 * 1024;
+/** 与后端 MAX_ASSET_BINDINGS 对齐：可多传，但只处理前 N 个 */
+const MAX_PROCESS_ASSETS = 2;
 
 export type UploadedFile = {
   id: string;
@@ -203,6 +205,12 @@ export default function FileDropzone({
       filesRef.current = next;
       onFilesChange(next);
 
+      if (next.length > MAX_PROCESS_ASSETS) {
+        setError(
+          `已上传 ${next.length} 个作品，本次只处理前 ${MAX_PROCESS_ASSETS} 个（按列表顺序）`,
+        );
+      }
+
       for (const item of staged) {
         void uploadOne(item.meta.id, item.file);
       }
@@ -338,10 +346,23 @@ export default function FileDropzone({
           </p>
           <p className="mt-2 text-[11px] text-zinc-600">
             pdf / pptx / docx / xlsx / csv / 视频 / 图片 · 最大 100MB ·
-            作品最多处理 2 个
+            作品最多处理 {MAX_PROCESS_ASSETS} 个
           </p>
         </motion.div>
       </motion.div>
+
+      {files.length > MAX_PROCESS_ASSETS ? (
+        <p
+          className="rounded-xl border border-amber-200/30 bg-amber-100/[0.08] px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-100/95"
+          role="status"
+        >
+          已上传 {files.length} 个作品，
+          <span className="font-medium text-amber-50">
+            本次只处理前 {MAX_PROCESS_ASSETS} 个
+          </span>
+          （按列表顺序）。其余仍保留在列表中，但不会进入本次生成。
+        </p>
+      ) : null}
 
       {error && (
         <p className="text-[12px] text-amber-200/80" role="alert">
