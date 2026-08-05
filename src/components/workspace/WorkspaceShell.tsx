@@ -577,6 +577,9 @@ export default function WorkspaceShell() {
               };
             }
           }}
+          onResultUpdate={(next) => {
+            setResult(next);
+          }}
         />
       </main>
 

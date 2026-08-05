@@ -111,7 +111,7 @@ profile | education | experience | project | skills | certifications | other
 字段约定:
 - 实习/工作: title=职位(或「公司 · 职位」); organization=公司(若未写入 title); location/dateRange 有则填
 - 项目: title=项目名; organization=所属机构/课程(可选)
-- 教育: title=学校名; organization=学位/专业; dateRange=就读区间(有则填)
+- 教育: title=学校名; organization=学位/专业; dateRange=就读区间(有则填)。课程 / GPA / 荣誉 / 奖学金等:仅当原简历或用户补充里【明确写出】时,才写入该教育 item 的 bullets;原文没有就 bullets 必须为 [] —— 绝对禁止为了填满教育栏而编造课程名、GPA 或奖项。教育栏单薄时,可在 gapAnalysis 用一句话提示用户可自行补充,不要在 bullets 里硬凑。
 - 技能: title=分组名(可 ""); organization/location/dateRange 均为 ""; bullets=技能要点
 - 证书: title=证书名; dateRange=获得时间(有则填); bullets 可空
 - profile: 见上,仅一段摘要

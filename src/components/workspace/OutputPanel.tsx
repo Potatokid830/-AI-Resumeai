@@ -19,11 +19,16 @@ import type {
 } from "@/lib/generateTypes";
 import { buildResumePlainText } from "@/lib/resumePlainText";
 import {
+  applyEducationSupplement,
+  hasThinEducation,
+} from "@/lib/educationEnrich";
+import {
   normalizeContact,
   type ResumeContact,
 } from "@/lib/resumeContact";
 import AiInsights from "./AiInsights";
 import DeepDivePanel from "./DeepDivePanel";
+import EducationEnrichCard from "./EducationEnrichCard";
 import ExportResumeModal from "./ExportResumeModal";
 import MarkHtml from "./MarkHtml";
 import MatchScore from "./MatchScore";
@@ -539,19 +544,29 @@ function ResultState({
   onUnlockRequest,
   onRegisterExport,
   onContactUpdate,
+  onResultUpdate,
 }: {
   result: GenerateApiResponse;
   contentUnlocked: boolean;
   onUnlockRequest?: () => void;
   onRegisterExport?: (fn: (() => Promise<void>) | null) => void;
   onContactUpdate?: (contact: ResumeContact) => void;
+  onResultUpdate?: (next: GenerateApiResponse) => void;
 }) {
   const sections = result.sections ?? [];
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [educationDismissed, setEducationDismissed] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showEducationEnrich =
+    !educationDismissed && hasThinEducation(result) && contentUnlocked;
+
+  useEffect(() => {
+    setEducationDismissed(false);
+  }, [result.sections]);
 
   const showToast = useCallback((message: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -606,6 +621,24 @@ function ResultState({
     return () => onRegisterExport?.(null);
   }, [openExportFlow, onRegisterExport]);
 
+  const handleEducationApply = useCallback(
+    (text: string) => {
+      if (!contentUnlocked) {
+        onUnlockRequest?.();
+        return;
+      }
+      const next = applyEducationSupplement(result, text);
+      if (next === result) {
+        showToast("未找到可补充的教育条目");
+        return;
+      }
+      onResultUpdate?.(next);
+      setEducationDismissed(true);
+      showToast("已写入教育栏");
+    },
+    [contentUnlocked, onResultUpdate, onUnlockRequest, result, showToast],
+  );
+
   if (!sections.length) {
     return <EmptyState error="终版简历数据缺失，请重新生成" />;
   }
@@ -646,6 +679,13 @@ function ResultState({
             ))}
           </ul>
         </div>
+      ) : null}
+
+      {showEducationEnrich ? (
+        <EducationEnrichCard
+          onApply={handleEducationApply}
+          onDismiss={() => setEducationDismissed(true)}
+        />
       ) : null}
 
       <div className="no-export mb-0 flex items-center justify-end gap-2">
@@ -805,6 +845,7 @@ type OutputPanelProps = {
   onUnlockRequest?: () => void;
   onRegisterExport?: (fn: (() => Promise<void>) | null) => void;
   onContactUpdate?: (contact: ResumeContact) => void;
+  onResultUpdate?: (next: GenerateApiResponse) => void;
 };
 
 export default function OutputPanel({
@@ -822,6 +863,7 @@ export default function OutputPanel({
   onUnlockRequest,
   onRegisterExport,
   onContactUpdate,
+  onResultUpdate,
 }: OutputPanelProps) {
   const prevStatusRef = useRef(status);
   const [exitFlash, setExitFlash] = useState(false);
@@ -884,6 +926,7 @@ export default function OutputPanel({
               onUnlockRequest={onUnlockRequest}
               onRegisterExport={onRegisterExport}
               onContactUpdate={onContactUpdate}
+              onResultUpdate={onResultUpdate}
             />
           )}
         </AnimatePresence>
