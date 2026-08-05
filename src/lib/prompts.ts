@@ -79,6 +79,25 @@ const FINAL_TAIL = `
 
 interviewDefense 字段:以第一人称写,内容是"如果面试官追问这段经历,我可以这样如实展开"。因为简历里每句都是真的,这段防御话术才写得出来、也才站得住。
 
+## 章节类型与顺序
+section.type 只能是:
+profile | education | experience | project | skills | certifications | other
+
+归类:
+- profile: 个人简介(可选,见下)
+- education: 教育背景
+- experience: 实习/工作经历
+- project: 项目经历
+- skills: 技能清单
+- certifications: 证书/资格认证(不要塞进 skills 或 other)
+- other: 附加信息(兴趣、个人投资、语言以外的次要内容等)——永远放最后一类
+
+## 个人简介 PROFILE(可选,防注水)
+若简历素材足以诚实概括求职者背景,可输出一个 type="profile" 的 section(title 建议「个人简介」):
+- 至多 1 个 item; title/organization/location/dateRange 均为 ""
+- bullets 放 1 段短摘要(约 2-4 句),或等价写入 revised;基于真实背景与目标方向概括,禁止编造经历、数据、头衔或成就
+- 素材不足、写不出不注水的摘要时:整节不要输出(不要空标题、不要「暂无」、不要空话凑字)
+
 ## 条目结构化字段(投递排版真源)
 每条 item 必须填写结构化改写字段,供成品简历精确排版:
 - title: 主标题(职位 / 项目名 / 学校名等)
@@ -94,6 +113,8 @@ interviewDefense 字段:以第一人称写,内容是"如果面试官追问这段
 - 项目: title=项目名; organization=所属机构/课程(可选)
 - 教育: title=学校名; organization=学位/专业; dateRange=就读区间(有则填)
 - 技能: title=分组名(可 ""); organization/location/dateRange 均为 ""; bullets=技能要点
+- 证书: title=证书名; dateRange=获得时间(有则填); bullets 可空
+- profile: 见上,仅一段摘要
 
 ## 强制输出格式
 只返回合法 JSON(不要 Markdown)。按 sections/items 输出整份简历;字段可先填得粗糙,但结构必须完整:
@@ -105,7 +126,7 @@ interviewDefense 字段:以第一人称写,内容是"如果面试官追问这段
   "sections": [
     {
       "id": string,
-      "type": "experience"|"education"|"skills"|"project"|"other",
+      "type": "profile"|"education"|"experience"|"project"|"skills"|"certifications"|"other",
       "title": string,
       "items": [
         {
@@ -156,7 +177,7 @@ const PORTFOLIO_STAR_TAIL = `
   "sections": [
     {
       "id": string,
-      "type": "experience"|"education"|"skills"|"project"|"other",
+      "type": "profile"|"education"|"experience"|"project"|"skills"|"certifications"|"other",
       "title": string,
       "items": [
         {

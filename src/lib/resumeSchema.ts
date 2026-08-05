@@ -12,12 +12,33 @@ import type {
 import { normalizeContact } from "@/lib/resumeContact";
 
 const SECTION_TYPES: ResumeSectionType[] = [
-  "experience",
+  "profile",
   "education",
-  "skills",
+  "experience",
   "project",
+  "skills",
+  "certifications",
   "other",
 ];
+
+/** 成品简历标准章节顺序 */
+export const RESUME_SECTION_ORDER: ResumeSectionType[] = [
+  "profile",
+  "education",
+  "experience",
+  "project",
+  "skills",
+  "certifications",
+  "other",
+];
+
+export function sortResumeSections(sections: ResumeSection[]): ResumeSection[] {
+  return [...sections].sort((a, b) => {
+    const ai = RESUME_SECTION_ORDER.indexOf(a.type);
+    const bi = RESUME_SECTION_ORDER.indexOf(b.type);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+}
 
 const ITEM_STATUSES: ResumeItemStatus[] = ["revised", "unchanged", "weak"];
 
@@ -267,10 +288,33 @@ function normalizeSection(
 
   if (!items.length) return null;
 
+  const type = normalizeSectionType(row.type);
+  const defaultTitle =
+    type === "profile"
+      ? "个人简介"
+      : type === "certifications"
+        ? "证书"
+        : type === "skills"
+          ? "技能"
+          : type === "education"
+            ? "教育经历"
+            : "经历";
+
+  // profile：无实质正文则整节省略（不留空标题）
+  if (type === "profile") {
+    const hasText = items.some(
+      (item) =>
+        Boolean(item.revised?.trim()) ||
+        Boolean(item.bullets?.some((b) => b.trim())) ||
+        Boolean(item.title?.trim()),
+    );
+    if (!hasText) return null;
+  }
+
   return {
     id: asString(row.id, `sec_${index + 1}`),
-    type: normalizeSectionType(row.type),
-    title: asString(row.title, "经历"),
+    type,
+    title: asString(row.title, defaultTitle),
     items,
   };
 }
@@ -371,7 +415,8 @@ export function buildPortfolioSourceLabel(fileName: string): string {
 
 /**
  * 用 experiencesSnapshot 强制盖章 resume 项的 id/original，并写入 enhancedBy。
- * 保证配对经历与被增强经历为同一条。
+ * 仅当 item.id 命中 snapshot 经历 id 时盖章——禁止贪心 fallback，
+ * 避免把经历原文盖到 profile / skills / education / certifications 上。
  */
 export function applyExperienceSnapshotStamps(
   response: GenerateApiResponse,
@@ -381,15 +426,22 @@ export function applyExperienceSnapshotStamps(
   if (!response.sections?.length || !snapshot.length) return response;
 
   const used = new Set<string>();
+  const byId = new Map(snapshot.map((s) => [s.id, s]));
 
   const sections = response.sections.map((section) => ({
     ...section,
     items: section.items.map((item) => {
       if (item.source === "portfolio") return item;
 
-      let snap =
-        snapshot.find((s) => s.id === item.id && !used.has(s.id)) ??
-        snapshot.find((s) => !used.has(s.id));
+      // 非经历/项目章节：绝不盖章
+      if (section.type !== "experience" && section.type !== "project") {
+        return { ...item, source: "resume" as const };
+      }
+
+      const snap =
+        (item.id && byId.get(item.id) && !used.has(item.id)
+          ? byId.get(item.id)
+          : undefined) ?? undefined;
 
       if (!snap) {
         return { ...item, source: "resume" as const };

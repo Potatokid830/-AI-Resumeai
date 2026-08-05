@@ -3,10 +3,12 @@ import type { ResumeContact } from "@/lib/resumeContact";
 export type { ResumeContact } from "@/lib/resumeContact";
 
 export type ResumeSectionType =
-  | "experience"
+  | "profile"
   | "education"
-  | "skills"
+  | "experience"
   | "project"
+  | "skills"
+  | "certifications"
   | "other";
 
 export type ResumeItemStatus = "revised" | "unchanged" | "weak";

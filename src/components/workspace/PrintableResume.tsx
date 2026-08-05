@@ -3,19 +3,14 @@
 import type { CSSProperties, ReactNode } from "react";
 import type {
   GenerateApiResponse,
+  ResumeSection,
   ResumeSectionItem,
-  ResumeSectionType,
 } from "@/lib/generateTypes";
 import type { ResumeContact } from "@/lib/resumeContact";
-import { hasStructuredEntry } from "@/lib/resumeSchema";
-
-const SECTION_ORDER: ResumeSectionType[] = [
-  "education",
-  "experience",
-  "project",
-  "skills",
-  "other",
-];
+import {
+  hasStructuredEntry,
+  sortResumeSections,
+} from "@/lib/resumeSchema";
 
 /** 常见日期片段：2021.09 - 2023.06 / 2021-09~至今 / 2021年9月-2023年6月 等 */
 const DATE_FRAGMENT_RE =
@@ -30,14 +25,6 @@ type ParsedItem = {
   meta?: string;
   bodyLines: string[];
 };
-
-function sortSections(sections: NonNullable<GenerateApiResponse["sections"]>) {
-  return [...sections].sort((a, b) => {
-    const ai = SECTION_ORDER.indexOf(a.type);
-    const bi = SECTION_ORDER.indexOf(b.type);
-    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-  });
-}
 
 function splitLines(text: string) {
   return text
@@ -122,7 +109,6 @@ function fromStructured(item: ResumeSectionItem): ParsedItem | null {
 function resolvePrintItem(item: ResumeSectionItem): ParsedItem | null {
   const structured = fromStructured(item);
   if (structured) {
-    // 有结构但 title/bullets 都空、只剩 date 等——仍可渲染；若完全无可见文本则再 fallback
     if (structured.title || structured.meta || structured.date || structured.bodyLines.length) {
       return structured;
     }
@@ -133,6 +119,16 @@ function resolvePrintItem(item: ResumeSectionItem): ParsedItem | null {
 
 function hasPrintableContent(item: ResumeSectionItem): boolean {
   return Boolean(resolvePrintItem(item));
+}
+
+function isCompactSection(section: ResumeSection): boolean {
+  return section.type === "skills" || section.type === "certifications";
+}
+
+function profileParagraph(item: ResumeSectionItem): string {
+  const fromBullets = (item.bullets ?? []).map((b) => b.trim()).filter(Boolean).join(" ");
+  if (fromBullets) return fromBullets;
+  return (item.revised || "").trim();
 }
 
 const linkStyle: CSSProperties = {
@@ -204,12 +200,15 @@ function ContactLine({ contact }: { contact: ResumeContact }) {
 function ResumeItemBlock({
   itemId,
   parsed,
+  compact,
 }: {
   itemId: string;
   parsed: ParsedItem;
+  compact?: boolean;
 }) {
-  // 有正文行时用分点；无标题的技能条等也能干净列出
   const useBullets = parsed.bodyLines.length > 0;
+  const bulletGap = compact ? "1pt" : "2pt";
+  const listMargin = compact ? "2pt 0 0" : "4pt 0 0";
 
   return (
     <div
@@ -225,7 +224,7 @@ function ResumeItemBlock({
             justifyContent: "space-between",
             alignItems: "baseline",
             gap: "12pt",
-            fontSize: "10.5pt",
+            fontSize: compact ? "10pt" : "10.5pt",
             fontWeight: 700,
             color: "#000000",
             textAlign: "left",
@@ -253,7 +252,7 @@ function ResumeItemBlock({
       {parsed.meta ? (
         <p
           style={{
-            margin: "2pt 0 0",
+            margin: compact ? "1pt 0 0" : "2pt 0 0",
             fontSize: "9.5pt",
             fontStyle: "italic",
             color: "#555555",
@@ -267,16 +266,17 @@ function ResumeItemBlock({
       {useBullets ? (
         <ul
           style={{
-            margin: "4pt 0 0",
-            paddingLeft: "14pt",
+            margin: listMargin,
+            paddingLeft: compact ? "12pt" : "14pt",
             color: "#222222",
+            lineHeight: compact ? 1.35 : 1.55,
           }}
         >
           {parsed.bodyLines.map((line, index) => (
             <li
               key={`${itemId}-bullet-${index}`}
               style={{
-                marginTop: index === 0 ? 0 : "2pt",
+                marginTop: index === 0 ? 0 : bulletGap,
                 textAlign: "justify",
               }}
             >
@@ -291,11 +291,16 @@ function ResumeItemBlock({
             style={{
               margin:
                 index === 0 && (parsed.title || parsed.meta || parsed.date)
-                  ? "4pt 0 0"
-                  : "3pt 0 0",
+                  ? compact
+                    ? "2pt 0 0"
+                    : "4pt 0 0"
+                  : compact
+                    ? "1pt 0 0"
+                    : "3pt 0 0",
               color: "#222222",
               textAlign: "justify",
               whiteSpace: "pre-wrap",
+              lineHeight: compact ? 1.35 : 1.55,
             }}
           >
             {line}
@@ -306,6 +311,45 @@ function ResumeItemBlock({
   );
 }
 
+function ProfileSectionBlock({ section }: { section: ResumeSection }) {
+  const paragraphs = section.items
+    .map(profileParagraph)
+    .map((text) => text.trim())
+    .filter(Boolean);
+  if (!paragraphs.length) return null;
+
+  return (
+    <section>
+      <h2
+        style={{
+          margin: "0 0 6pt",
+          paddingBottom: "3pt",
+          borderBottom: "1px solid #1A1A1A",
+          fontSize: "11pt",
+          fontWeight: 700,
+          letterSpacing: "0.5px",
+          color: "#000000",
+        }}
+      >
+        {section.title || "个人简介"}
+      </h2>
+      {paragraphs.map((text, index) => (
+        <p
+          key={`${section.id}-p-${index}`}
+          style={{
+            margin: index === 0 ? 0 : "4pt 0 0",
+            color: "#222222",
+            textAlign: "justify",
+            lineHeight: 1.5,
+          }}
+        >
+          {text}
+        </p>
+      ))}
+    </section>
+  );
+}
+
 export default function PrintableResume({
   result,
   contact,
@@ -313,7 +357,7 @@ export default function PrintableResume({
   result: GenerateApiResponse;
   contact: ResumeContact;
 }) {
-  const sections = sortSections(result.sections ?? []);
+  const sections = sortResumeSections(result.sections ?? []);
   const hasName = Boolean(contact.name?.trim());
   const rawRole = result.targetRole?.trim() || "";
   const targetRole =
@@ -372,13 +416,18 @@ export default function PrintableResume({
 
       <div style={{ display: "flex", flexDirection: "column", gap: "14pt" }}>
         {sections.map((section) => {
+          if (section.type === "profile") {
+            return <ProfileSectionBlock key={section.id} section={section} />;
+          }
+
           const items = section.items.filter(hasPrintableContent);
           if (!items.length) return null;
+          const compact = isCompactSection(section);
           return (
             <section key={section.id}>
               <h2
                 style={{
-                  margin: "0 0 8pt",
+                  margin: compact ? "0 0 5pt" : "0 0 8pt",
                   paddingBottom: "3pt",
                   borderBottom: "1px solid #1A1A1A",
                   fontSize: "11pt",
@@ -390,7 +439,11 @@ export default function PrintableResume({
                 {section.title}
               </h2>
               <div
-                style={{ display: "flex", flexDirection: "column", gap: "10pt" }}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: compact ? "4pt" : "10pt",
+                }}
               >
                 {items.map((item) => {
                   const parsed = resolvePrintItem(item);
@@ -400,6 +453,7 @@ export default function PrintableResume({
                       key={item.id}
                       itemId={item.id}
                       parsed={parsed}
+                      compact={compact}
                     />
                   );
                 })}

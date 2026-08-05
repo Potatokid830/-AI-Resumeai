@@ -1,4 +1,5 @@
 import type { GenerateApiResponse } from "./generateTypes";
+import { sortResumeSections } from "./resumeSchema";
 
 export function buildResumePlainText(result: GenerateApiResponse) {
   const sections = result.sections;
@@ -10,7 +11,7 @@ export function buildResumePlainText(result: GenerateApiResponse) {
     lines.push(result.targetRole.trim(), "");
   }
 
-  for (const section of sections) {
+  for (const section of sortResumeSections(sections)) {
     lines.push(section.title);
     for (const item of section.items) {
       if (item.source === "portfolio") {
