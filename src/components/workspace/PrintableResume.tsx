@@ -1,8 +1,13 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import type { GenerateApiResponse, ResumeSectionType } from "@/lib/generateTypes";
+import type {
+  GenerateApiResponse,
+  ResumeSectionItem,
+  ResumeSectionType,
+} from "@/lib/generateTypes";
 import type { ResumeContact } from "@/lib/resumeContact";
+import { hasStructuredEntry } from "@/lib/resumeSchema";
 
 const SECTION_ORDER: ResumeSectionType[] = [
   "education",
@@ -43,7 +48,6 @@ function splitLines(text: string) {
 }
 
 function extractDateFromTitleLine(line: string): { title: string; date?: string } {
-  // 优先匹配行尾日期（标题在左、日期在右的常见写法）
   const trailing = line.match(
     /^(.*?)\s{2,}(.+)$|^(.*?)\s+[|｜]\s*(.+)$|^(.*?)\s+((?:19|20)\d{2}[\s\S]*)$/,
   );
@@ -70,14 +74,13 @@ function extractDateFromTitleLine(line: string): { title: string; date?: string 
 function looksLikeMetaLine(line: string): boolean {
   if (line.length > 60) return false;
   if (META_HINT_RE.test(line)) return true;
-  // 短行且含地点分隔或纯城市感：如 "上海 · 中国" / "Beijing, China"
   if (line.length <= 36 && /[,，·|｜/]/.test(line) && !DATE_FRAGMENT_RE.test(line)) {
     return true;
   }
   return false;
 }
 
-/** 启发式：第一行标题(+日期)，可选次要信息行，其余为正文 */
+/** Fallback：从整段 revised 启发式拆标题/日期/副行/正文 */
 function parseItemBlocks(revised: string): ParsedItem {
   const lines = splitLines(revised);
   if (!lines.length) {
@@ -99,6 +102,37 @@ function parseItemBlocks(revised: string): ParsedItem {
     meta,
     bodyLines: lines.slice(cursor),
   };
+}
+
+function fromStructured(item: ResumeSectionItem): ParsedItem | null {
+  if (!hasStructuredEntry(item)) return null;
+
+  const metaParts = [item.organization, item.location]
+    .map((part) => part?.trim() || "")
+    .filter(Boolean);
+
+  return {
+    title: item.title?.trim() || "",
+    date: item.dateRange?.trim() || undefined,
+    meta: metaParts.length ? metaParts.join(" · ") : undefined,
+    bodyLines: (item.bullets ?? []).map((b) => b.trim()).filter(Boolean),
+  };
+}
+
+function resolvePrintItem(item: ResumeSectionItem): ParsedItem | null {
+  const structured = fromStructured(item);
+  if (structured) {
+    // 有结构但 title/bullets 都空、只剩 date 等——仍可渲染；若完全无可见文本则再 fallback
+    if (structured.title || structured.meta || structured.date || structured.bodyLines.length) {
+      return structured;
+    }
+  }
+  if (!item.revised?.trim()) return null;
+  return parseItemBlocks(item.revised);
+}
+
+function hasPrintableContent(item: ResumeSectionItem): boolean {
+  return Boolean(resolvePrintItem(item));
 }
 
 const linkStyle: CSSProperties = {
@@ -169,13 +203,13 @@ function ContactLine({ contact }: { contact: ResumeContact }) {
 
 function ResumeItemBlock({
   itemId,
-  revised,
+  parsed,
 }: {
   itemId: string;
-  revised: string;
+  parsed: ParsedItem;
 }) {
-  const parsed = parseItemBlocks(revised);
-  if (!parsed.title && !parsed.bodyLines.length) return null;
+  // 有正文行时用分点；无标题的技能条等也能干净列出
+  const useBullets = parsed.bodyLines.length > 0;
 
   return (
     <div
@@ -184,7 +218,7 @@ function ResumeItemBlock({
         breakInside: "avoid",
       }}
     >
-      {parsed.title ? (
+      {parsed.title || parsed.date ? (
         <div
           style={{
             display: "flex",
@@ -197,7 +231,9 @@ function ResumeItemBlock({
             textAlign: "left",
           }}
         >
-          <span style={{ flex: "1 1 auto", minWidth: 0 }}>{parsed.title}</span>
+          <span style={{ flex: "1 1 auto", minWidth: 0 }}>
+            {parsed.title || "\u00A0"}
+          </span>
           {parsed.date ? (
             <span
               style={{
@@ -228,19 +264,44 @@ function ResumeItemBlock({
         </p>
       ) : null}
 
-      {parsed.bodyLines.map((line, index) => (
-        <p
-          key={`${itemId}-body-${index}`}
+      {useBullets ? (
+        <ul
           style={{
-            margin: index === 0 && (parsed.title || parsed.meta) ? "4pt 0 0" : "3pt 0 0",
+            margin: "4pt 0 0",
+            paddingLeft: "14pt",
             color: "#222222",
-            textAlign: "justify",
-            whiteSpace: "pre-wrap",
           }}
         >
-          {line}
-        </p>
-      ))}
+          {parsed.bodyLines.map((line, index) => (
+            <li
+              key={`${itemId}-bullet-${index}`}
+              style={{
+                marginTop: index === 0 ? 0 : "2pt",
+                textAlign: "justify",
+              }}
+            >
+              {line}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        parsed.bodyLines.map((line, index) => (
+          <p
+            key={`${itemId}-body-${index}`}
+            style={{
+              margin:
+                index === 0 && (parsed.title || parsed.meta || parsed.date)
+                  ? "4pt 0 0"
+                  : "3pt 0 0",
+              color: "#222222",
+              textAlign: "justify",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {line}
+          </p>
+        ))
+      )}
     </div>
   );
 }
@@ -311,7 +372,7 @@ export default function PrintableResume({
 
       <div style={{ display: "flex", flexDirection: "column", gap: "14pt" }}>
         {sections.map((section) => {
-          const items = section.items.filter((item) => item.revised?.trim());
+          const items = section.items.filter(hasPrintableContent);
           if (!items.length) return null;
           return (
             <section key={section.id}>
@@ -331,13 +392,17 @@ export default function PrintableResume({
               <div
                 style={{ display: "flex", flexDirection: "column", gap: "10pt" }}
               >
-                {items.map((item) => (
-                  <ResumeItemBlock
-                    key={item.id}
-                    itemId={item.id}
-                    revised={item.revised}
-                  />
-                ))}
+                {items.map((item) => {
+                  const parsed = resolvePrintItem(item);
+                  if (!parsed) return null;
+                  return (
+                    <ResumeItemBlock
+                      key={item.id}
+                      itemId={item.id}
+                      parsed={parsed}
+                    />
+                  );
+                })}
               </div>
             </section>
           );

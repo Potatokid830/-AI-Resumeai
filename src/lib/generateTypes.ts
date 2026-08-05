@@ -30,6 +30,15 @@ export type ResumeSectionItem = {
   sourceLabel?: string;
   /** 代码盖章：用哪些作品文件增强了这条 resume 经历 */
   enhancedBy?: string[];
+  /**
+   * 条目级排版字段（投递真源）。
+   * 原文/用户补充里没有的元数据必须省略或空，禁止编造（尤其 dateRange）。
+   */
+  title?: string;
+  organization?: string;
+  location?: string;
+  dateRange?: string;
+  bullets?: string[];
 };
 
 export type ResumeSection = {

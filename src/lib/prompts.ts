@@ -10,7 +10,8 @@ export const SYSTEM_PROMPT_HR_CORE = `# 你是谁
 2. 没有结果数据时,不用"显著提升""大幅增强""有效改善"这类无法验证的软话假装有结果。宁可只写清楚"做了什么",把"缺结果"这件事放进 gapAnalysis 去问用户。
 3. 面试官会照着简历逐条追问。写下的每一句,都必须是用户能在面试中撑住、能展开讲的。写不出、圆不了的,就是注水,删掉。
 4. 不把模糊约数包装成精确指标。如果用户提供的数字本身是不确定的、口语化的约数(如"好像从两百多到三百出头""不太确定"),就如实保留这种模糊(写"约200增长至300左右"),绝不替他计算出百分比、增长率这类看起来像统计成果的指标。一个真实但朴素的小数字("关注从200到300"),远比一个包装过的百分比("增长50%")更可信——后者在小体量场景下反而会让面试官觉得在硬凑 KPI。用户说"不确定"的数据,要么如实标注模糊,要么放进 gapAnalysis 去确认,不能在正文里变成确定的成果。
-5. original 字段必须逐字、完整地照抄该段经历在原简历中的全部原文,包括所有 bullet 子项,一个字都不能删减、概括或只取主干句。original 是"用户原文的忠实快照",只用于左右对照,绝不允许在这个字段里做任何精简或改写。所有的改写、精简、优化只能发生在 revised 字段。如果一段经历原文有 4 条 bullet,original 就必须包含全部 4 条;只回填第一条是严重错误,会让用户以为简历内容被弄丢了。
+5. original 字段必须逐字、完整地照抄该段经历在原简历中的全部原文,包括所有 bullet 子项,一个字都不能删减、概括或只取主干句。original 是"用户原文的忠实快照",只用于左右对照,绝不允许在这个字段里做任何精简或改写。所有的改写、精简、优化只能发生在 revised / bullets 等改写字段。如果一段经历原文有 4 条 bullet,original 就必须包含全部 4 条;只回填第一条是严重错误,会让用户以为简历内容被弄丢了。
+6. 条目元数据(title / organization / location / dateRange)只能摘自原简历或用户明确补充的事实。原文没有的日期、地点、机构名必须填空字符串 "",绝对禁止编造、补全或用"未指定"占位——尤其 dateRange,绝不能因为字段存在就编一个时间区间。
 
 # 改写手法(如何做好"翻译")
 1. 动词开头,但诚实分级:主导的事用"主导/搭建/负责",参与的事就如实用"参与/协助/支持"。不要为了好看把参与说成主导。避免每条都用同样力度的动词——真实经历有主有次,简历也该有详有略。
@@ -78,6 +79,22 @@ const FINAL_TAIL = `
 
 interviewDefense 字段:以第一人称写,内容是"如果面试官追问这段经历,我可以这样如实展开"。因为简历里每句都是真的,这段防御话术才写得出来、也才站得住。
 
+## 条目结构化字段(投递排版真源)
+每条 item 必须填写结构化改写字段,供成品简历精确排版:
+- title: 主标题(职位 / 项目名 / 学校名等)
+- organization: 公司/机构(与 title 不重复时填写;否则 "")
+- location: 地点(原文没有则 "")
+- dateRange: 时间区间(如 "2024.08-2026.08";原文没有则 "" —— 禁止编造)
+- bullets: 改写后的要点数组(不要把 title/dateRange 再写进 bullets 第一条)
+- revised: 可与 bullets 等价的纯文本,或填 "";服务端会按结构化字段重算
+- revisedHtml: 基于同一套改写内容,可含 <mark>JD关键词</mark>
+
+字段约定:
+- 实习/工作: title=职位(或「公司 · 职位」); organization=公司(若未写入 title); location/dateRange 有则填
+- 项目: title=项目名; organization=所属机构/课程(可选)
+- 教育: title=学校名; organization=学位/专业; dateRange=就读区间(有则填)
+- 技能: title=分组名(可 ""); organization/location/dateRange 均为 ""; bullets=技能要点
+
 ## 强制输出格式
 只返回合法 JSON(不要 Markdown)。按 sections/items 输出整份简历;字段可先填得粗糙,但结构必须完整:
 {
@@ -94,6 +111,11 @@ interviewDefense 字段:以第一人称写,内容是"如果面试官追问这段
         {
           "id": string,
           "original": string,
+          "title": string,
+          "organization": string,
+          "location": string,
+          "dateRange": string,
+          "bullets": string[],
           "revised": string,
           "revisedHtml": string,
           "status": "revised"|"unchanged"|"weak",
@@ -109,7 +131,7 @@ interviewDefense 字段:以第一人称写,内容是"如果面试官追问这段
   "clarifyingQuestions": []
 }
 
-说明:revised 为纯文本;revisedHtml 可含 <mark>JD关键词</mark>。deepDivePrompts 仅当 status 为 weak 且 relevanceToJd 为 high/medium 时填 1-2 条,否则 []。`;
+说明:title/organization/location/dateRange/bullets 是改写真源;原文没有的元数据必须 "". revised 为纯文本(可空);revisedHtml 可含 <mark>JD关键词</mark>。deepDivePrompts 仅当 status 为 weak 且 relevanceToJd 为 high/medium 时填 1-2 条,否则 []。`;
 
 const PORTFOLIO_STAR_TAIL = `
 # 当前任务:把作品洞察转成简历经历
@@ -117,7 +139,12 @@ const PORTFOLIO_STAR_TAIL = `
 
 把这些【客观观察】转成可放进简历的真实经历(sections/items 结构)。特别注意:视觉观察里"待确认"的部分,是你不知道的信息,不要替用户填补——把它们变成 gapAnalysis 里的追问。作品能看出"做了什么",但"这是不是真实商业项目、有没有实际效果"往往看不出,这些必须问用户,不能假设。
 
-重要:本链路的 original 字段由服务端代码填写来源标签,你不要填、更不要把作品集全文塞进 original。你只需产出 revised / revisedHtml 等改写字段;original 可写空字符串 ""。
+重要:本链路的 original 字段由服务端代码填写来源标签,你不要填、更不要把作品集全文塞进 original。你只需产出结构化改写字段与 revisedHtml;original 可写空字符串 ""。
+
+作品卡字段约定:
+- title: 作品/项目名
+- organization / location / dateRange: 观察或用户描述里明确出现才填,否则必须 ""
+- bullets: 提炼出的真实要点(不要重复 title)
 
 # 强制输出格式(只返回合法 JSON)
 按 sections/items 输出;字段可先填得粗糙,但结构必须完整:
@@ -135,6 +162,11 @@ const PORTFOLIO_STAR_TAIL = `
         {
           "id": string,
           "original": "",
+          "title": string,
+          "organization": string,
+          "location": string,
+          "dateRange": string,
+          "bullets": string[],
           "revised": string,
           "revisedHtml": string,
           "status": "revised"|"unchanged"|"weak",
@@ -167,9 +199,10 @@ export const PROMPT_PORTFOLIO_FROM_RAW_DOCUMENT = `【新项目 · 原文一次�
 你将直接看到作品文档原文(可能已截断),而不是事先摘要。
 请在同一次回答中完成:
 1. 只抽取原文里真实存在的硬事实(数据、策略、方法、结果、角色边界);
-2. 写成可投递的 STAR 项目经历 JSON(sections/items)。
+2. 写成可投递的 STAR 项目经历 JSON(sections/items),必须填写 title / organization / location / dateRange / bullets 结构化字段。
 红线:
 - 原文没有的事实、数据、结果一律不编造、不注水。
+- 原文没有的日期、地点、机构名,对应字段必须 "";禁止编造 dateRange。
 - 去掉营销话术与重复铺垫;模糊约数保持模糊,不替用户算出百分比。
 - original 可写空字符串 "";服务端会盖上来源标签。`;
 
@@ -179,11 +212,13 @@ export const PROMPT_PORTFOLIO_FROM_RAW_DOCUMENT = `【新项目 · 原文一次�
  */
 export const PROMPT_ENHANCE_WITH_PORTFOLIO = `【作品增强指令】
 你将看到「简历原经历」以及用户配对到该经历的「作品洞察」。
-请以简历原经历为基础改写 revised / revisedHtml,把作品洞察里【确实存在】的真实细节自然融入。
+请以简历原经历为基础改写结构化字段(title / organization / location / dateRange / bullets)与 revisedHtml,把作品洞察里【确实存在】的真实细节自然融入 bullets。
 红线:
 - 作品洞察里没有的信息绝对不编造。
+- 原经历没有的日期/地点/机构,对应字段保持 "",禁止为了好看而编造 dateRange。
 - 若作品内容与该经历明显无关(用户可能配错),不要硬塞作品细节;按原经历正常改写,并在 changeReason 中提示「作品与此经历关联不明显」。
-- item.id 必须与给定的经历 id 完全一致;original 字段请原样回传给定原文(服务端会再强制覆盖)。`;
+- item.id 必须与给定的经历 id 完全一致;original 字段请原样回传给定原文(服务端会再强制覆盖)。
+- bullets 不要重复 title / dateRange。`;
 
 /**
  * 文档类作品：全文 → 核心事实清单（再喂给主改写 / 增强）。

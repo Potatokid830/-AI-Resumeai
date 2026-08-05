@@ -23,6 +23,17 @@ const ITEM_STATUSES: ResumeItemStatus[] = ["revised", "unchanged", "weak"];
 
 const RELEVANCE: ResumeRelevance[] = ["high", "medium", "low"];
 
+const MAX_ENTRY_TITLE = 120;
+const MAX_ORG = 120;
+const MAX_LOCATION = 80;
+const MAX_DATE_RANGE = 60;
+const MAX_BULLETS = 8;
+const MAX_BULLET_LEN = 400;
+
+/** 明显占位/空话，规范化时丢弃，避免「有字段就编日期」 */
+const META_PLACEHOLDER_RE =
+  /^(未指定|未知|暂无|无|没有|n\/?a|tbd|null|none|待定|待补充|-|—|–|\.{1,3})$/i;
+
 export type NormalizeGenerateOptions = {
   matchSubtitle?: string;
   /** 由调用链写死；默认 resume */
@@ -33,6 +44,81 @@ export type NormalizeGenerateOptions = {
 
 function asString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
+}
+
+function cleanMetaField(value: unknown, max: number): string {
+  const text = asString(value).replace(/\s+/g, " ").trim().slice(0, max);
+  if (!text || META_PLACEHOLDER_RE.test(text)) return "";
+  return text;
+}
+
+function normalizeBullets(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const row of raw) {
+    if (typeof row !== "string") continue;
+    const line = row.replace(/\s+/g, " ").trim().slice(0, MAX_BULLET_LEN);
+    if (!line) continue;
+    out.push(line);
+    if (out.length >= MAX_BULLETS) break;
+  }
+  return out;
+}
+
+function escapeHtml(text: string) {
+  return text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** 是否具备可用的结构化排版数据 */
+export function hasStructuredEntry(
+  item: Pick<
+    ResumeSectionItem,
+    "title" | "organization" | "location" | "dateRange" | "bullets"
+  >,
+): boolean {
+  return Boolean(
+    item.title?.trim() ||
+      item.organization?.trim() ||
+      item.location?.trim() ||
+      item.dateRange?.trim() ||
+      (item.bullets && item.bullets.length > 0),
+  );
+}
+
+/**
+ * 由结构化字段合成纯文本 revised（对照/复制/fallback 共用）。
+ * dateRange 仅在原文抽出时才有值；此处不编造。
+ */
+export function composeRevisedFromStructured(
+  item: Pick<
+    ResumeSectionItem,
+    "title" | "organization" | "location" | "dateRange" | "bullets"
+  >,
+): string {
+  const lines: string[] = [];
+  const title = item.title?.trim() || "";
+  if (title) lines.push(title);
+
+  const metaParts = [item.organization, item.location, item.dateRange]
+    .map((part) => part?.trim() || "")
+    .filter(Boolean);
+  if (metaParts.length) lines.push(metaParts.join(" · "));
+
+  for (const bullet of item.bullets ?? []) {
+    const line = bullet.trim();
+    if (line) lines.push(line);
+  }
+
+  return lines.join("\n").trim();
+}
+
+function composeRevisedHtmlFallback(
+  item: Pick<
+    ResumeSectionItem,
+    "title" | "organization" | "location" | "dateRange" | "bullets"
+  >,
+): string {
+  return escapeHtml(composeRevisedFromStructured(item));
 }
 
 function normalizeSectionType(value: unknown): ResumeSectionType {
@@ -91,12 +177,32 @@ function normalizeItem(
   const row = raw as Record<string, unknown>;
   const id = asString(row.id, `item_${index + 1}`);
   const original = asString(row.original);
-  const revised = asString(row.revised);
+  let revised = asString(row.revised);
 
-  // portfolio：允许缺 original（稍后由代码盖章）；resume：至少要有原文或改写
+  const title = cleanMetaField(row.title, MAX_ENTRY_TITLE);
+  const organization = cleanMetaField(row.organization, MAX_ORG);
+  const location = cleanMetaField(row.location, MAX_LOCATION);
+  const dateRange = cleanMetaField(row.dateRange, MAX_DATE_RANGE);
+  const bullets = normalizeBullets(row.bullets);
+
+  const structured = {
+    ...(title ? { title } : {}),
+    ...(organization ? { organization } : {}),
+    ...(location ? { location } : {}),
+    ...(dateRange ? { dateRange } : {}),
+    ...(bullets.length ? { bullets } : {}),
+  };
+
+  const hasStructured = hasStructuredEntry(structured);
+  if (hasStructured) {
+    // 结构化为投递真源：覆盖 revised，避免与 bullets 双写漂移
+    revised = composeRevisedFromStructured(structured);
+  }
+
+  // portfolio：允许缺 original；需有 revised 或结构化内容
   if (itemSource === "portfolio") {
-    if (!revised.trim()) return null;
-  } else if (!original && !revised) {
+    if (!revised.trim() && !hasStructured) return null;
+  } else if (!original && !revised && !hasStructured) {
     return null;
   }
 
@@ -112,9 +218,14 @@ function normalizeItem(
     deepDivePrompts = deepDivePrompts.slice(0, 2);
   }
 
+  const modelHtml = asString(row.revisedHtml).trim();
   const revisedHtml =
-    asString(row.revisedHtml) ||
-    (revised ? revised.replace(/</g, "&lt;").replace(/>/g, "&gt;") : "");
+    modelHtml ||
+    (hasStructured
+      ? composeRevisedHtmlFallback(structured)
+      : revised
+        ? escapeHtml(revised)
+        : "");
 
   const enhancedBy = Array.isArray(row.enhancedBy)
     ? row.enhancedBy.filter(
@@ -132,6 +243,7 @@ function normalizeItem(
     relevanceToJd,
     deepDivePrompts,
     source: itemSource,
+    ...structured,
     ...(enhancedBy?.length ? { enhancedBy } : {}),
   };
 
@@ -163,6 +275,16 @@ function normalizeSection(
   };
 }
 
+function itemHasContent(it: Record<string, unknown>): boolean {
+  if (typeof it.revised === "string" && it.revised.trim()) return true;
+  if (typeof it.original === "string" && it.original.trim()) return true;
+  if (typeof it.title === "string" && it.title.trim()) return true;
+  if (Array.isArray(it.bullets) && it.bullets.some((b) => typeof b === "string" && b.trim())) {
+    return true;
+  }
+  return false;
+}
+
 /** 终版：至少有一个非空 section */
 export function isValidFinalSections(data: unknown): boolean {
   if (!data || typeof data !== "object") return false;
@@ -176,14 +298,9 @@ export function isValidFinalSections(data: unknown): boolean {
     if (!section || typeof section !== "object") return false;
     const row = section as Record<string, unknown>;
     if (!Array.isArray(row.items) || row.items.length === 0) return false;
-    // 至少有一条带 revised，或带 original（resume）
     return row.items.some((item) => {
       if (!item || typeof item !== "object") return false;
-      const it = item as Record<string, unknown>;
-      return (
-        (typeof it.revised === "string" && it.revised.trim().length > 0) ||
-        (typeof it.original === "string" && it.original.trim().length > 0)
-      );
+      return itemHasContent(item as Record<string, unknown>);
     });
   });
 }
