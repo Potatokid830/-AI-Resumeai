@@ -11,6 +11,7 @@ import {
   hasStructuredEntry,
   sortResumeSections,
 } from "@/lib/resumeSchema";
+import { displaySectionTitle } from "@/lib/resumeDisplay";
 
 /** 常见日期片段：2021.09 - 2023.06 / 2021-09~至今 / 2021年9月-2023年6月 等 */
 const DATE_FRAGMENT_RE =
@@ -331,7 +332,7 @@ function ProfileSectionBlock({ section }: { section: ResumeSection }) {
           color: "#000000",
         }}
       >
-        {section.title || "个人简介"}
+        {displaySectionTitle(section)}
       </h2>
       {paragraphs.map((text, index) => (
         <p
@@ -436,7 +437,7 @@ export default function PrintableResume({
                   color: "#000000",
                 }}
               >
-                {section.title}
+                {displaySectionTitle(section)}
               </h2>
               <div
                 style={{

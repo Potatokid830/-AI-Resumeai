@@ -1,6 +1,10 @@
 "use client";
 
 import type { GenerateApiResponse, ResumeSectionItem } from "@/lib/generateTypes";
+import {
+  displaySectionTitle,
+  isEssentiallyUnchanged,
+} from "@/lib/resumeDisplay";
 import { sortResumeSections } from "@/lib/resumeSchema";
 
 function originalText(item: ResumeSectionItem): string {
@@ -19,6 +23,45 @@ function revisedText(item: ResumeSectionItem): string {
 }
 
 function ComparisonItem({ item }: { item: ResumeSectionItem }) {
+  const unchanged = isEssentiallyUnchanged(item);
+
+  if (unchanged) {
+    return (
+      <div
+        style={{
+          pageBreakInside: "avoid",
+          breakInside: "avoid",
+          border: "1px solid #e4e4e7",
+          borderRadius: "6pt",
+          padding: "10pt 12pt",
+          background: "#fafafa",
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontSize: "9pt",
+            fontWeight: 700,
+            color: "#71717a",
+          }}
+        >
+          此项无需改动
+        </p>
+        <p
+          style={{
+            margin: "4pt 0 0",
+            fontSize: "10pt",
+            lineHeight: 1.5,
+            color: "#3f3f46",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {revisedText(item)}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -165,7 +208,7 @@ export default function PrintableComparison({
                   color: "#000000",
                 }}
               >
-                {section.title}
+                {displaySectionTitle(section)}
               </h2>
               <div
                 style={{ display: "flex", flexDirection: "column", gap: "10pt" }}
