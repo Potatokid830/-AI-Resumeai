@@ -24,9 +24,6 @@ import Toast from "./Toast";
 import type { WorkspaceStatus } from "./types";
 
 const REQUEST_TIMEOUT_MS = 120_000;
-const PORTFOLIO_TIMEOUT_MS = 120_000;
-/** Gemini 视觉阶段展示时长后切到 DeepSeek 文案 */
-const PORTFOLIO_STAGE_FLIP_MS = 14_000;
 const CODE_PURCHASE_URL = "https://m.tb.cn/resumeai-pro";
 
 type SessionPayload = {
@@ -83,8 +80,7 @@ export default function WorkspaceShell() {
   const [loadingFlow, setLoadingFlow] = useState<"final" | "deepdive">(
     "final",
   );
-  const [portfolioStep, setPortfolioStep] = useState(0);
-  const [isAnalyzingPortfolio, setIsAnalyzingPortfolio] = useState(false);
+  const [portfolioStep] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionRef = useRef<SessionPayload | null>(null);
   const exportHandlerRef = useRef<(() => Promise<void>) | null>(null);
@@ -97,20 +93,6 @@ export default function WorkspaceShell() {
   useEffect(() => {
     refreshUnlockState();
   }, [refreshUnlockState]);
-
-  useEffect(() => {
-    if (!isAnalyzingPortfolio) {
-      setPortfolioStep(0);
-      return;
-    }
-    setPortfolioStep(0);
-    setLoadingHint("正在让 Gemini 视觉引擎审阅您的作品…");
-    const flipId = window.setTimeout(() => {
-      setPortfolioStep(1);
-      setLoadingHint("正在让 DeepSeek 重构 STAR 简历…");
-    }, PORTFOLIO_STAGE_FLIP_MS);
-    return () => window.clearTimeout(flipId);
-  }, [isAnalyzingPortfolio]);
 
   const showToast = useCallback(
     (
@@ -205,113 +187,12 @@ export default function WorkspaceShell() {
     [],
   );
 
-  const handleAnalyzePortfolio = useCallback(
-    async (payload: GeneratePayload) => {
-      if (status === "loading") return;
-      if (!guardAccess()) return;
-
-      const portfolioAsset =
-        payload.assetUrls.find((item) =>
-          /\.(mp4|mov|webm|pdf|pptx)$/i.test(item.name),
-        ) ?? payload.assetUrls[0];
-
-      if (!portfolioAsset?.url) {
-        setError("请先上传并直传成功视频或 PDF / PPTX 作品集文件");
-        return;
-      }
-
-      refreshUnlockState();
-      setIsAnalyzingPortfolio(true);
-      setLoadingVariant("portfolio");
-      setLoadingHint("正在让 Gemini 视觉引擎审阅您的作品…");
-      setError(null);
-      setStatus("loading");
-      setResult(null);
-
-      try {
-        const controller = new AbortController();
-        const timeoutId = window.setTimeout(
-          () => controller.abort(),
-          PORTFOLIO_TIMEOUT_MS,
-        );
-
-        let data: GenerateApiResponse;
-        try {
-          const response = await fetch("/api/analyze-portfolio", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: controller.signal,
-            body: JSON.stringify({
-              url: portfolioAsset.url,
-              fileName: portfolioAsset.name,
-              jdText: payload.jdText,
-              userNotes: payload.userNotes || payload.experienceText,
-              assets: payload.assetUrls,
-            }),
-          });
-
-          const payloadJson = (await response.json().catch(() => null)) as
-            | (GenerateApiResponse & { error?: string; detail?: string })
-            | null;
-
-          if (!response.ok) {
-            const detail = payloadJson?.detail
-              ? `：${payloadJson.detail}`
-              : "";
-            throw new Error(
-              `${payloadJson?.error ?? `解析失败（${response.status}）`}${detail}`,
-            );
-          }
-
-          if (!isGenerateApiResponse(payloadJson)) {
-            throw new Error("作品集返回数据格式异常，请重试一次");
-          }
-          data = payloadJson;
-        } finally {
-          window.clearTimeout(timeoutId);
-        }
-
-        // 【扣费节点】作品集终版成功后计费（与深度重组一致）
-        consumeFinalGeneration();
-
-        setResult({
-          ...data,
-          matchSubtitle:
-            data.matchSubtitle?.trim() ||
-            "作品集视觉解析完成 · 解锁查看完整 STAR",
-          contact: normalizeContact(
-            mergeContact(data.contact, payload.contact),
-          ),
-        });
-        setStatus("result");
-        refreshUnlockState();
-      } catch (err) {
-        let message = "作品集解析失败，请稍后重试";
-        if (err instanceof DOMException && err.name === "AbortError") {
-          message = "请求超时，请检查网络后重试";
-        } else if (err instanceof TypeError) {
-          message = "网络异常，无法连接服务器";
-        } else if (err instanceof Error && err.message) {
-          message = err.message;
-        }
-        setError(message);
-        setResult(null);
-        setStatus("idle");
-      } finally {
-        setIsAnalyzingPortfolio(false);
-        setLoadingVariant("default");
-      }
-    },
-    [guardAccess, refreshUnlockState, status],
-  );
-
   const handleGenerate = useCallback(
     async (payload: GeneratePayload) => {
       if (status === "loading") return;
       if (!guardAccess()) return;
 
       refreshUnlockState();
-      setIsAnalyzingPortfolio(false);
       setLoadingVariant("default");
       setLoadingHasAssets(
         (payload.assetBindings?.length ?? 0) > 0 ||
@@ -547,10 +428,8 @@ export default function WorkspaceShell() {
 
       <main className="relative grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
         <InputPanel
-          isGenerating={status === "loading" && !isAnalyzingPortfolio}
-          isAnalyzingPortfolio={isAnalyzingPortfolio}
+          isGenerating={status === "loading"}
           onGenerate={handleGenerate}
-          onAnalyzePortfolio={handleAnalyzePortfolio}
         />
         <OutputPanel
           status={status}

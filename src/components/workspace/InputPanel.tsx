@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clapperboard, LoaderCircle, Sparkles } from "lucide-react";
+import { LoaderCircle, Sparkles } from "lucide-react";
 import type {
   AssetBinding,
   AssetBindTarget,
@@ -14,18 +14,6 @@ import ResumeUpload, { type ResumeUploadState } from "./ResumeUpload";
 
 const fieldClassName =
   "w-full resize-none rounded-2xl border border-white/[0.07] bg-white/[0.02] px-4 py-3.5 text-[14px] leading-relaxed text-zinc-200 placeholder:text-zinc-600 outline-none transition-[border-color,box-shadow,background-color] duration-300 hover:border-white/[0.1] hover:bg-white/[0.03] focus:border-white/20 focus:bg-white/[0.04] focus:shadow-[0_0_0_3px_rgba(255,255,255,0.06),0_0_32px_-8px_rgba(255,255,255,0.12)]";
-
-const PORTFOLIO_EXTENSIONS = [
-  ".mp4",
-  ".mov",
-  ".webm",
-  ".pdf",
-  ".pptx",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".webp",
-] as const;
 
 export type GenerateAssetRef = {
   name: string;
@@ -55,19 +43,13 @@ type ParseStatus = "idle" | "loading" | "ready" | "error";
 
 type InputPanelProps = {
   isGenerating?: boolean;
-  isAnalyzingPortfolio?: boolean;
   onGenerate?: (payload: GeneratePayload) => void | Promise<void>;
-  onAnalyzePortfolio?: (payload: GeneratePayload) => void | Promise<void>;
 };
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isPortfolioAsset(file: UploadedFile) {
-  return (PORTFOLIO_EXTENSIONS as readonly string[]).includes(file.extension);
 }
 
 function buildExperienceText(files: UploadedFile[], notes: string) {
@@ -95,9 +77,7 @@ function buildExperienceText(files: UploadedFile[], notes: string) {
 
 export default function InputPanel({
   isGenerating = false,
-  isAnalyzingPortfolio = false,
   onGenerate,
-  onAnalyzePortfolio,
 }: InputPanelProps) {
   const [jd, setJd] = useState("");
   const [resumeState, setResumeState] = useState<ResumeUploadState>({
@@ -114,7 +94,7 @@ export default function InputPanel({
   const parsedResumeUrlRef = useRef<string | null>(null);
   const parseAbortRef = useRef<AbortController | null>(null);
 
-  const busy = isGenerating || isAnalyzingPortfolio;
+  const busy = isGenerating;
 
   // 文件增删时同步 bindings：新文件默认 new，移除的删掉
   useEffect(() => {
@@ -148,16 +128,30 @@ export default function InputPanel({
     return files.some((file) => file.status === "uploading");
   }, [files, resumeState.status]);
 
-  const portfolioReady = useMemo(
-    () =>
-      files.some(
-        (file) =>
-          file.status === "ready" &&
-          Boolean(file.url) &&
-          isPortfolioAsset(file),
-      ),
-    [files],
-  );
+  const resumeReady =
+    resumeState.status === "ready" && Boolean(resumeState.asset.url);
+  const jdReady = jd.trim().length > 0;
+  const parseReady = parseStatus === "ready" && experiences.length > 0;
+  const canGenerate =
+    !busy && !isUploading && resumeReady && parseReady && jdReady;
+
+  const generateBlockReason = useMemo(() => {
+    if (busy) return null;
+    if (isUploading) return "文件正在上传，请稍候";
+    if (!resumeReady) return "请先上传简历";
+    if (parseStatus === "loading") return "请等待简历解析完成";
+    if (parseStatus === "error") return "简历解析失败，请重试后再生成";
+    if (!parseReady) return "请等待简历解析完成";
+    if (!jdReady) return "请先填写目标岗位 JD";
+    return null;
+  }, [
+    busy,
+    isUploading,
+    jdReady,
+    parseReady,
+    parseStatus,
+    resumeReady,
+  ]);
 
   const parseExperiences = async (resumeUrl: string, resumeFileName: string) => {
     parseAbortRef.current?.abort();
@@ -296,7 +290,7 @@ export default function InputPanel({
             输入你的素材
           </h1>
           <p className="mt-1.5 text-sm text-zinc-500">
-            大文件直传云端；视频 / PDF / PPT 可走作品集专属解析。
+            简历与目标 JD 必填；作品可选，可绑定到某条经历或标为新项目。
           </p>
         </header>
 
@@ -425,94 +419,42 @@ export default function InputPanel({
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent px-5 pt-10 pb-5 sm:px-7 sm:pb-6">
         <div className="pointer-events-auto flex flex-col items-center gap-2.5">
-          {(isUploading || (!portfolioReady && files.some((f) => f.status === "ready"))) && (
+          {isUploading ? (
             <p className="text-center text-[12px] text-zinc-500">
-              {isUploading
-                ? "文件正在直传云端，完成后即可生成"
-                : "上传 mp4 / mov / pdf / pptx / 图片后可启用作品集解析"}
+              文件正在直传云端，完成后即可生成
             </p>
-          )}
+          ) : generateBlockReason ? (
+            <p className="text-center text-[12px] text-zinc-500">
+              {generateBlockReason}
+            </p>
+          ) : null}
 
-          <div className="flex w-full max-w-xl flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-center">
-            <button
-              type="button"
-              onClick={() => {
-                if (!jd.trim()) {
-                  const ok = window.confirm(
-                    "建议填写目标岗位 JD，否则改写效果会大打折扣。\n\n仍要继续生成吗？",
-                  );
-                  if (!ok) return;
-                }
-                void onGenerate?.(buildPayload());
-              }}
-              disabled={busy || isUploading}
-              className="group relative inline-flex flex-1 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:cursor-not-allowed sm:flex-none"
-            >
-              <span
-                aria-hidden
-                className="absolute -inset-3 rounded-full bg-white/0 blur-xl transition-all duration-500 group-hover:bg-white/[0.12] group-disabled:opacity-0"
-              />
-              <span className="relative inline-flex w-full items-center justify-center gap-2 rounded-full bg-zinc-50 px-6 py-3 text-[13.5px] font-medium tracking-tight text-zinc-950 shadow-[0_1px_0_rgba(255,255,255,0.7)_inset,0_12px_36px_-12px_rgba(255,255,255,0.28)] transition-[transform,background-color,opacity] duration-300 group-hover:scale-[1.02] group-hover:bg-white group-active:scale-[0.98] group-disabled:scale-100 group-disabled:bg-zinc-300 group-disabled:opacity-80 sm:w-auto sm:px-7">
-                {isGenerating && !isAnalyzingPortfolio ? (
-                  <LoaderCircle
-                    className="h-4 w-4 animate-spin text-zinc-700"
-                    strokeWidth={1.75}
-                  />
-                ) : (
-                  <Sparkles className="h-4 w-4 text-zinc-700" strokeWidth={1.75} />
-                )}
-                {isGenerating && !isAnalyzingPortfolio
-                  ? "重组中..."
-                  : "✨ AI 深度重组"}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                void onAnalyzePortfolio?.(buildPayload());
-              }}
-              disabled={busy || isUploading || !portfolioReady}
-              title={
-                portfolioReady
-                  ? "视觉大模型解析作品集并生成 STAR"
-                  : "请先上传视频或 PDF / PPTX"
-              }
-              className={`group relative inline-flex flex-1 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200/40 disabled:cursor-not-allowed sm:flex-none ${
-                portfolioReady && !busy && !isUploading
-                  ? ""
-                  : "opacity-45"
-              }`}
-            >
-              <span
-                aria-hidden
-                className={`absolute -inset-3 rounded-full blur-xl transition-all duration-500 group-disabled:opacity-0 ${
-                  portfolioReady
-                    ? "bg-amber-200/0 group-hover:bg-amber-200/15"
-                    : "bg-transparent"
-                }`}
-              />
-              <span
-                className={`relative inline-flex w-full items-center justify-center gap-2 rounded-full border px-6 py-3 text-[13.5px] font-medium tracking-tight transition-[transform,background-color,border-color,color] duration-300 sm:w-auto sm:px-7 ${
-                  portfolioReady && !busy && !isUploading
-                    ? "border-amber-200/35 bg-amber-100 text-zinc-950 shadow-[0_12px_36px_-14px_rgba(251,191,36,0.55)] group-hover:scale-[1.02] group-hover:bg-amber-50 group-active:scale-[0.98]"
-                    : "border-white/10 bg-white/[0.04] text-zinc-500"
-                }`}
-              >
-                {isAnalyzingPortfolio ? (
-                  <LoaderCircle
-                    className="h-4 w-4 animate-spin"
-                    strokeWidth={1.75}
-                  />
-                ) : (
-                  <Clapperboard className="h-4 w-4" strokeWidth={1.75} />
-                )}
-                {isAnalyzingPortfolio
-                  ? "解析中..."
-                  : "🎬 一键解析多媒体作品集"}
-              </span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!canGenerate) return;
+              void onGenerate?.(buildPayload());
+            }}
+            disabled={!canGenerate}
+            title={generateBlockReason ?? "根据 JD 与简历生成匹配简历"}
+            className="group relative inline-flex w-full max-w-xl items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:cursor-not-allowed"
+          >
+            <span
+              aria-hidden
+              className="absolute -inset-3 rounded-full bg-white/0 blur-xl transition-all duration-500 group-hover:bg-white/[0.12] group-disabled:opacity-0"
+            />
+            <span className="relative inline-flex w-full items-center justify-center gap-2 rounded-full bg-zinc-50 px-6 py-3 text-[13.5px] font-medium tracking-tight text-zinc-950 shadow-[0_1px_0_rgba(255,255,255,0.7)_inset,0_12px_36px_-12px_rgba(255,255,255,0.28)] transition-[transform,background-color,opacity] duration-300 group-hover:scale-[1.02] group-hover:bg-white group-active:scale-[0.98] group-disabled:scale-100 group-disabled:bg-zinc-300 group-disabled:opacity-80 sm:px-7">
+              {isGenerating ? (
+                <LoaderCircle
+                  className="h-4 w-4 animate-spin text-zinc-700"
+                  strokeWidth={1.75}
+                />
+              ) : (
+                <Sparkles className="h-4 w-4 text-zinc-700" strokeWidth={1.75} />
+              )}
+              {isGenerating ? "生成中..." : "生成匹配简历"}
+            </span>
+          </button>
         </div>
       </div>
     </section>
