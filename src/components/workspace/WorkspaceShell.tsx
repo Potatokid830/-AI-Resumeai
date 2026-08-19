@@ -15,7 +15,6 @@ import {
   consumeFinalGeneration,
   isContentUnlocked,
   isDevBypassEnabled,
-  isVip,
 } from "@/lib/usage";
 import PaywallModal from "@/components/PaywallModal";
 import InputPanel, { type GeneratePayload } from "./InputPanel";
@@ -198,64 +197,43 @@ export default function WorkspaceShell() {
         (payload.assetBindings?.length ?? 0) > 0 ||
           (payload.assetUrls?.length ?? 0) > 0,
       );
+      setLoadingFlow("final");
+      setLoadingHint("AI 正在重组匹配简历...");
       setError(null);
       setStatus("loading");
       setResult(null);
 
       try {
-        if (isVip()) {
-          // VIP：两步深挖（Gap 不计费）
-          setLoadingFlow("deepdive");
-          setLoadingHint("AI 正在做 Gap 分析并准备追问...");
-          const data = await requestGenerate({
-            payload,
-            isFinal: false,
-          });
-
-          sessionRef.current = {
-            jdText: payload.jdText,
-            experienceText: payload.experienceText,
-            resumeUrl: payload.resumeUrl,
-            resumeFileName: payload.resumeFileName,
-            assetUrls: payload.assetUrls,
-            userNotes: payload.userNotes,
-            experiencesSnapshot: payload.experiencesSnapshot,
-            assetBindings: payload.assetBindings,
-            contact: normalizeContact(
-              mergeContact(data.contact, payload.contact),
-            ),
-            questions: data.clarifyingQuestions,
-          };
-
-          setResult({
-            ...data,
-            contact: normalizeContact(
-              mergeContact(data.contact, payload.contact),
-            ),
-            matchSubtitle: data.matchSubtitle?.trim() || "仍有关键细节待补充",
-          });
-          setStatus("deepdive");
-          return;
-        }
-
-        // Freemium：跳过追问，一次性基础版重组 → 直接出结果
-        setLoadingFlow("final");
-        setLoadingHint("AI 正在重组基础版简历...");
         const data = await requestGenerate({
           payload,
           isFinal: true,
         });
 
-        // 【扣费节点】免费基础版终版成功后计费
+        // 【扣费节点】首轮终版成功后计费；同会话深化不另扣
         consumeFinalGeneration();
+
+        const contact = normalizeContact(
+          mergeContact(data.contact, payload.contact),
+        );
+
+        sessionRef.current = {
+          jdText: payload.jdText,
+          experienceText: payload.experienceText,
+          resumeUrl: payload.resumeUrl,
+          resumeFileName: payload.resumeFileName,
+          assetUrls: payload.assetUrls,
+          userNotes: payload.userNotes,
+          experiencesSnapshot: payload.experiencesSnapshot,
+          assetBindings: payload.assetBindings,
+          contact,
+          questions: data.clarifyingQuestions ?? [],
+        };
 
         setResult({
           ...data,
-          contact: normalizeContact(
-            mergeContact(data.contact, payload.contact),
-          ),
+          contact,
           matchSubtitle:
-            data.matchSubtitle?.trim() || "基础版已生成 · 解锁查看完整解析",
+            data.matchSubtitle?.trim() || "已完成 JD 对齐分析",
         });
         setStatus("result");
         refreshUnlockState();
@@ -280,7 +258,8 @@ export default function WorkspaceShell() {
     async (answers: string[]) => {
       const session = sessionRef.current;
       if (!session || status === "loading") return;
-      if (!guardAccess()) return;
+      if (!session.questions.length) return;
+      // 同会话深化是「同一份的完善」，不鉴权、不扣费
 
       const clarifyingAnswers: ClarifyingAnswer[] = session.questions.map(
         (question, index) => ({
@@ -294,7 +273,8 @@ export default function WorkspaceShell() {
         (session.assetBindings?.length ?? 0) > 0 ||
           (session.assetUrls?.length ?? 0) > 0,
       );
-      setLoadingHint("正在把细节揉进终版 STAR...");
+      setLoadingHint("正在根据你的补充优化简历...");
+      setError(null);
       setStatus("loading");
 
       try {
@@ -314,20 +294,25 @@ export default function WorkspaceShell() {
           clarifyingAnswers,
         });
 
-        // 【扣费节点】VIP 终版成功后计入每日用量
-        consumeFinalGeneration();
+        const contact = normalizeContact(
+          mergeContact(data.contact, session.contact),
+        );
+
+        sessionRef.current = {
+          ...session,
+          contact,
+          questions: data.clarifyingQuestions ?? [],
+        };
 
         setResult({
           ...data,
-          contact: normalizeContact(
-            mergeContact(data.contact, session.contact),
-          ),
-          matchSubtitle: data.matchSubtitle?.trim() || "已完成 JD 对齐分析",
+          contact,
+          matchSubtitle: data.matchSubtitle?.trim() || "已根据补充优化",
         });
         setStatus("result");
         refreshUnlockState();
       } catch (err) {
-        let message = "终版生成失败，请重试";
+        let message = "深化优化失败，请重试";
         if (err instanceof DOMException && err.name === "AbortError") {
           message = "请求超时，请检查网络后重试";
         } else if (err instanceof TypeError) {
@@ -336,17 +321,11 @@ export default function WorkspaceShell() {
           message = err.message;
         }
         setError(message);
-        setStatus("deepdive");
+        setStatus("result");
       }
     },
-    [guardAccess, refreshUnlockState, requestGenerate, status],
+    [refreshUnlockState, requestGenerate, status],
   );
-
-  const handleDeepDiveSkip = useCallback(() => {
-    const session = sessionRef.current;
-    if (!session) return;
-    void handleDeepDiveSubmit(session.questions.map(() => ""));
-  }, [handleDeepDiveSubmit]);
 
   const handleNavExport = useCallback(() => {
     if (!canExport) return;
@@ -442,7 +421,6 @@ export default function WorkspaceShell() {
           loadingFlow={loadingFlow}
           contentUnlocked={contentUnlocked}
           onDeepDiveSubmit={handleDeepDiveSubmit}
-          onDeepDiveSkip={handleDeepDiveSkip}
           onUnlockRequest={openPaywall}
           onRegisterExport={handleRegisterExport}
           onContactUpdate={(contact) => {

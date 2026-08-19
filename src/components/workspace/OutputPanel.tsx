@@ -589,6 +589,7 @@ function ResultState({
   onRegisterExport,
   onContactUpdate,
   onResultUpdate,
+  onDeepDiveSubmit,
 }: {
   result: GenerateApiResponse;
   contentUnlocked: boolean;
@@ -596,6 +597,7 @@ function ResultState({
   onRegisterExport?: (fn: (() => Promise<void>) | null) => void;
   onContactUpdate?: (contact: ResumeContact) => void;
   onResultUpdate?: (next: GenerateApiResponse) => void;
+  onDeepDiveSubmit?: (answers: string[]) => void;
 }) {
   const sections = result.sections ?? [];
   const [toast, setToast] = useState<string | null>(null);
@@ -604,13 +606,18 @@ function ResultState({
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [educationDismissed, setEducationDismissed] = useState(false);
+  const [deepenOpen, setDeepenOpen] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clarifyingQuestions = result.clarifyingQuestions ?? [];
+  const canDeepen = clarifyingQuestions.length > 0 && Boolean(onDeepDiveSubmit);
 
   const showEducationEnrich =
     !educationDismissed && hasThinEducation(result) && contentUnlocked;
 
   useEffect(() => {
     setEducationDismissed(false);
+    setDeepenOpen(false);
   }, [result.sections]);
 
   const showToast = useCallback((message: string) => {
@@ -705,6 +712,10 @@ function ResultState({
     [contentUnlocked, onResultUpdate, onUnlockRequest, result, showToast],
   );
 
+  const handleDeepenSkip = useCallback(() => {
+    setDeepenOpen(false);
+  }, []);
+
   if (!sections.length) {
     return <EmptyState error="终版简历数据缺失，请重新生成" />;
   }
@@ -731,6 +742,28 @@ function ResultState({
           score={result.matchScore}
           subtitle={result.matchSubtitle}
         />
+
+        {canDeepen && !deepenOpen ? (
+          <button
+            type="button"
+            onClick={() => setDeepenOpen(true)}
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-200/20 bg-amber-100/[0.06] px-4 py-3 text-[13px] font-medium text-amber-50/95 transition-colors hover:border-amber-200/35 hover:bg-amber-100/[0.1]"
+          >
+            <Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+            回答几个问题，匹配度可以更高
+          </button>
+        ) : null}
+
+        {canDeepen && deepenOpen ? (
+          <div className="mt-3">
+            <DeepDivePanel
+              variant="embedded"
+              questions={clarifyingQuestions}
+              onSubmit={(answers) => onDeepDiveSubmit?.(answers)}
+              onSkip={handleDeepenSkip}
+            />
+          </div>
+        ) : null}
       </motion.div>
 
       {result.warnings && result.warnings.length > 0 ? (
@@ -915,7 +948,6 @@ type OutputPanelProps = {
   loadingFlow?: "final" | "deepdive";
   contentUnlocked?: boolean;
   onDeepDiveSubmit?: (answers: string[]) => void;
-  onDeepDiveSkip?: () => void;
   onUnlockRequest?: () => void;
   onRegisterExport?: (fn: (() => Promise<void>) | null) => void;
   onContactUpdate?: (contact: ResumeContact) => void;
@@ -933,7 +965,6 @@ export default function OutputPanel({
   loadingFlow = "final",
   contentUnlocked = false,
   onDeepDiveSubmit,
-  onDeepDiveSkip,
   onUnlockRequest,
   onRegisterExport,
   onContactUpdate,
@@ -956,9 +987,7 @@ export default function OutputPanel({
 
   const showLoading = status === "loading" || exitFlash;
   const showTopAligned =
-    !showLoading &&
-    ((status === "result" && Boolean(result?.sections?.length)) ||
-      (status === "deepdive" && Boolean(result)));
+    !showLoading && status === "result" && Boolean(result?.sections?.length);
 
   return (
     <section className="relative flex min-h-0 flex-col bg-zinc-900/40">
@@ -983,16 +1012,6 @@ export default function OutputPanel({
               complete={exitFlash}
             />
           )}
-          {status === "deepdive" && result && !showLoading && (
-            <DeepDivePanel
-              questions={result.clarifyingQuestions}
-              gapAnalysis={result.gapAnalysis}
-              matchScore={result.matchScore}
-              matchSubtitle={result.matchSubtitle}
-              onSubmit={(answers) => onDeepDiveSubmit?.(answers)}
-              onSkip={() => onDeepDiveSkip?.()}
-            />
-          )}
           {status === "result" && result && !showLoading && (
             <ResultState
               result={result}
@@ -1001,11 +1020,12 @@ export default function OutputPanel({
               onRegisterExport={onRegisterExport}
               onContactUpdate={onContactUpdate}
               onResultUpdate={onResultUpdate}
+              onDeepDiveSubmit={onDeepDiveSubmit}
             />
           )}
         </AnimatePresence>
 
-        {status === "deepdive" && error && (
+        {status === "result" && error && (
           <p className="absolute bottom-6 left-1/2 max-w-sm -translate-x-1/2 text-center text-[12px] text-amber-200/85">
             {error}
           </p>

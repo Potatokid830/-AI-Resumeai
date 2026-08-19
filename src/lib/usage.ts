@@ -248,8 +248,8 @@ export function shouldShowPaywall(): boolean {
 }
 
 /**
- * 【扣费节点】仅在终版简历成功返回后调用。
- * Gap 分析 / 追问阶段绝不调用本函数。
+ * 【扣费节点】仅在首轮终版简历成功返回后调用。
+ * 同会话「深化优化」绝不调用本函数。
  */
 export function consumeFinalGeneration(): void {
   // 开发旁路不写用量，避免调试把免费额度 / VIP 日上限耗尽

@@ -77,6 +77,15 @@ const FINAL_TAIL = `
 
 把用户补充的真实细节自然地融进经历描述里,消除模板感。但补充进来的必须是用户真实提供的——如果某个追问用户没回答或答得含糊,不要替他编一个答案填进去,该缺口继续留在 gapAnalysis 里。
 
+## 可选深化追问(clarifyingQuestions)
+在输出终版的同时,附带 2-3 个 clarifyingQuestions,供用户稍后可选回答以进一步提升匹配度。
+- 即使素材看起来已经比较完整,也至少提 2 个;若实在挖不出,可返回 []。
+- 追问要能逼出真实的:结果与反馈、具体做法、规模与角色、这件事的真实背景(是作业/比赛/实习/真实工作)。
+- 追问要好回答——问的是用户脑子里本来就有、只是没写出来的事实,而不是要求他去现编。
+  好的追问:"这个项目最后有没有实际使用/上线/被采纳?结果怎么样?"
+  坏的追问:"请提供该项目的 ROI 和转化率数据。"
+- 若本轮已有用户补充回答且缺口已基本补齐,clarifyingQuestions 可返回 []。
+
 interviewDefense 字段:以第一人称写,内容是"如果面试官追问这段经历,我可以这样如实展开"。因为简历里每句都是真的,这段防御话术才写得出来、也才站得住。
 
 ## 章节类型与顺序
@@ -149,10 +158,10 @@ profile | education | experience | project | skills | certifications | other
   ],
   "gapAnalysis": string,
   "interviewDefense": string,
-  "clarifyingQuestions": []
+  "clarifyingQuestions": string[]
 }
 
-说明:title/organization/location/dateRange/bullets 是改写真源;原文没有的元数据必须 "". revised 为纯文本(可空);revisedHtml 可含 <mark>JD关键词</mark>。deepDivePrompts 仅当 status 为 weak 且 relevanceToJd 为 high/medium 时填 1-2 条,否则 []。`;
+说明:title/organization/location/dateRange/bullets 是改写真源;原文没有的元数据必须 "". revised 为纯文本(可空);revisedHtml 可含 <mark>JD关键词</mark>。deepDivePrompts 仅当 status 为 weak 且 relevanceToJd 为 high/medium 时填 1-2 条,否则 []。clarifyingQuestions 为可选深化追问(2-3 条,可 [])。`;
 
 const PORTFOLIO_STAR_TAIL = `
 # 当前任务:把作品洞察转成简历经历
@@ -200,7 +209,7 @@ const PORTFOLIO_STAR_TAIL = `
   ],
   "gapAnalysis": string,
   "interviewDefense": string,
-  "clarifyingQuestions": []
+  "clarifyingQuestions": string[]
 }`;
 
 export const SYSTEM_PROMPT_DEEPDIVE = `${SYSTEM_PROMPT_HR_CORE}
