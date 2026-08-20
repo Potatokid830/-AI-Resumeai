@@ -101,7 +101,7 @@ export async function uploadFileToBlob(
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error(
         reachedHighWater
-          ? "上传已到 99%，但云端确认超时。请压缩 PDF 后重试，或检查网络后重新上传。"
+          ? "上传接近完成但确认超时，请压缩文件后重试，或检查网络后重新上传。"
           : "上传超时，请检查网络后重试。",
       );
     }
@@ -109,38 +109,15 @@ export async function uploadFileToBlob(
     const message =
       error instanceof Error ? error.message : "上传失败，请稍后重试";
 
-    if (/client token|retrieve the client/i.test(message)) {
-      const detail = await diagnoseUploadError();
-      throw new Error(detail ? `${message}（${detail}）` : message);
+    // 不向用户暴露 Blob / client token 等实现细节
+    if (
+      /blob|client token|retrieve the client|multipart|vercel/i.test(message)
+    ) {
+      throw new Error("上传出了点问题，请重试");
     }
 
     throw new Error(message);
   } finally {
     window.clearTimeout(timeoutId);
-  }
-}
-
-async function diagnoseUploadError(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "blob.generate-client-token",
-        payload: {
-          pathname: "diagnose.pdf",
-          clientPayload: null,
-          multipart: true,
-        },
-      }),
-    });
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    if (data?.error) return data.error;
-    if (!res.ok) return `HTTP ${res.status}`;
-    return null;
-  } catch {
-    return null;
   }
 }

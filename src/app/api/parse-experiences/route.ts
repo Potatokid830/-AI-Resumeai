@@ -96,7 +96,7 @@ export async function POST(request: Request) {
 
   if (!resumeUrl) {
     return NextResponse.json(
-      { error: "请先上传简历并完成云端直传" },
+      { error: "请先上传简历" },
       { status: 400 },
     );
   }

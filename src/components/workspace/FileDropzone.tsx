@@ -155,7 +155,7 @@ export default function FileDropzone({
         patchFile(id, {
           status: "error",
           progress: 0,
-          error: err instanceof Error ? err.message : "直传失败",
+          error: err instanceof Error ? err.message : "上传失败",
         });
       }
     },
@@ -341,8 +341,8 @@ export default function FileDropzone({
 
           <p className="max-w-[280px] text-[13px] leading-relaxed tracking-tight text-zinc-300">
             {isDragging
-              ? "松开即可直传云端"
-              : "拖拽大文件至此，将直传 Vercel Blob（绕过 4.5MB 限制）"}
+              ? "松开即可上传"
+              : "拖拽文件到这里上传"}
           </p>
           <p className="mt-2 text-[11px] text-zinc-600">
             pdf / pptx / docx / xlsx / csv / 视频 / 图片 · 最大 100MB ·
@@ -407,8 +407,8 @@ export default function FileDropzone({
                     <p className="mt-0.5 text-[11px] text-zinc-500">
                       {file.status === "uploading"
                         ? file.phase === "finalizing"
-                          ? "分片已传完，正在确认云端写入…"
-                          : `正在直传云端 ${file.progress}%`
+                          ? "正在确认上传…"
+                          : `上传中 ${file.progress}%`
                         : file.status === "error"
                           ? file.error || "上传失败"
                           : `${formatFileSize(file.size)} · 已就绪`}

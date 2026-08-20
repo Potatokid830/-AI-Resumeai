@@ -440,7 +440,7 @@ export async function POST(request: Request) {
     body = (await request.json()) as GenerateRequestBody;
   } catch {
     return NextResponse.json(
-      { error: "请求体无效，请以 JSON 提交（含 Blob URL）" },
+      { error: "请求无效，请刷新页面后重试" },
       { status: 400 },
     );
   }

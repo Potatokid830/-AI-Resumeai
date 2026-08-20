@@ -354,19 +354,15 @@ export default function InputPanel({
                 {parseStatus === "ready" && experiences.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[12px] text-zinc-400">
-                      已识别 {experiences.length}{" "}
-                      段经历（将作为增强快照，阶段2不再二次切段）
+                      已识别 {experiences.length} 段经历
                     </p>
                     <ol className="space-y-1.5">
                       {experiences.map((exp) => (
                         <li
                           key={exp.id}
-                          className="flex items-start gap-2 text-[12.5px] leading-snug text-zinc-300"
+                          className="text-[12.5px] leading-snug text-zinc-300"
                         >
-                          <span className="shrink-0 font-mono text-[11px] text-zinc-500">
-                            {exp.id}
-                          </span>
-                          <span className="min-w-0 truncate">{exp.title}</span>
+                          <span className="min-w-0 truncate block">{exp.title}</span>
                         </li>
                       ))}
                     </ol>
@@ -421,7 +417,7 @@ export default function InputPanel({
         <div className="pointer-events-auto flex flex-col items-center gap-2.5">
           {isUploading ? (
             <p className="text-center text-[12px] text-zinc-500">
-              文件正在直传云端，完成后即可生成
+              文件正在上传，完成后即可生成
             </p>
           ) : generateBlockReason ? (
             <p className="text-center text-[12px] text-zinc-500">

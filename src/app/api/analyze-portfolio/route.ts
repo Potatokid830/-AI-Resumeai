@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
   if (!primary?.url || !primary.name) {
     return NextResponse.json(
-      { error: "请提供已直传云端的作品集文件 url" },
+      { error: "请先上传作品集文件" },
       { status: 400 },
     );
   }

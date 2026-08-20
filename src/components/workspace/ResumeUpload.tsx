@@ -97,7 +97,7 @@ export default function ResumeUpload({
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "直传失败，请重试";
+        error instanceof Error ? error.message : "上传失败，请重试";
       onStateChange({
         status: "error",
         name: incoming.name,
@@ -161,7 +161,7 @@ export default function ResumeUpload({
                 上传个人简历原件
               </span>
               <span className="mt-0.5 block text-[11px] text-zinc-500">
-                选择后直传云端 · 支持大文件（最大 100MB）
+                支持 PDF / Word，最大 100MB
               </span>
             </span>
           </motion.button>
@@ -196,8 +196,8 @@ export default function ResumeUpload({
                 <p className="mt-0.5 text-[11px] text-zinc-500">
                   {isUploading
                     ? state.phase === "finalizing"
-                      ? "正在确认云端写入…"
-                      : `正在直传云端 ${state.progress}%`
+                      ? "正在确认上传…"
+                      : `上传中 ${state.progress}%`
                     : formatFileSize(fileMeta?.size ?? 0)}
                   {state.status === "ready" && " · 已就绪"}
                 </p>
@@ -233,7 +233,7 @@ export default function ResumeUpload({
             {isUploading && (
               <div className="mt-3">
                 <div className="flex items-center justify-between text-[11px] text-zinc-500">
-                  <span>直传进度</span>
+                  <span>上传进度</span>
                   <span>{state.progress}%</span>
                 </div>
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">

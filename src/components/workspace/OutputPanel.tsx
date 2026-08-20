@@ -176,13 +176,13 @@ function EmptyState({ error }: { error?: string | null }) {
 const PORTFOLIO_PIPELINE = [
   {
     id: "gemini",
-    label: "Gemini Vision",
-    detail: "正在让 Gemini 视觉引擎审阅您的作品…",
+    label: "分析作品",
+    detail: "正在分析你的作品…",
   },
   {
     id: "deepseek",
-    label: "DeepSeek STAR",
-    detail: "正在让 DeepSeek 重构 STAR 简历…",
+    label: "重写经历",
+    detail: "正在重写经历…",
   },
 ] as const;
 
@@ -419,10 +419,10 @@ function LoadingState({
       </div>
 
       <div className="relative overflow-hidden rounded-2xl border border-amber-200/15 bg-zinc-950/50 p-5 shadow-[0_20px_60px_-40px_rgba(251,191,36,0.35)] backdrop-blur-xl">
-        <div className="mb-4 flex items-center justify-between text-[11px] tracking-[0.14em] text-zinc-500 uppercase">
-          <span>Dual-Engine Pipeline</span>
+        <div className="mb-4 flex items-center justify-between text-[11px] tracking-[0.14em] text-zinc-500">
+          <span>正在处理你的作品</span>
           <span className="text-amber-200/70">
-            STAGE {activeStep + 1}/{PORTFOLIO_PIPELINE.length}
+            第 {activeStep + 1}/{PORTFOLIO_PIPELINE.length} 步
           </span>
         </div>
 
@@ -482,9 +482,9 @@ function LoadingState({
             />
           ))}
         </div>
-        <p className="mt-4 font-mono text-[11px] leading-relaxed text-zinc-500">
-          <span className="text-amber-200/80">$</span> gemini.review | deepseek.star
-          --portfolio
+        <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
+          正在处理你的作品（第 {activeStep + 1}/{PORTFOLIO_PIPELINE.length}{" "}
+          步）…
         </p>
         {hint ? (
           <p className="mt-2 text-[11px] text-zinc-600">{hint}</p>
@@ -871,9 +871,6 @@ function ResultState({
                       <h3 className="text-[15px] font-semibold tracking-tight text-zinc-900">
                         {section.title}
                       </h3>
-                      <span className="text-[11px] tracking-[0.12em] text-zinc-400 uppercase">
-                        {section.type}
-                      </span>
                     </div>
                     <div className="space-y-4">
                       {section.items.map((item, itemIndex) => {

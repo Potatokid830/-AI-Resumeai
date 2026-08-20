@@ -268,4 +268,4 @@ export function consumeFinalGeneration(): void {
 }
 
 export const VIP_DAILY_CAP_MESSAGE =
-  "触发安全限制：您的专属 VIP 激活码今日生成次数已达上限 (20次)。为保障账号安全与大模型算力，请明日再试，或避免将激活码借予他人。";
+  "今日使用已达上限（20 次）。请明日再试，或避免将激活码借予他人。";
