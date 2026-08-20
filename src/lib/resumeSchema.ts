@@ -50,6 +50,8 @@ const MAX_LOCATION = 80;
 const MAX_DATE_RANGE = 60;
 const MAX_BULLETS = 8;
 const MAX_BULLET_LEN = 400;
+/** profile 摘要常为 2–4 句整段，单独放宽；经历等仍用 MAX_BULLET_LEN */
+const MAX_PROFILE_BULLET_LEN = 1500;
 
 /** 明显占位/空话，规范化时丢弃，避免「有字段就编日期」 */
 const META_PLACEHOLDER_RE =
@@ -73,12 +75,12 @@ function cleanMetaField(value: unknown, max: number): string {
   return text;
 }
 
-function normalizeBullets(raw: unknown): string[] {
+function normalizeBullets(raw: unknown, maxLen: number = MAX_BULLET_LEN): string[] {
   if (!Array.isArray(raw)) return [];
   const out: string[] = [];
   for (const row of raw) {
     if (typeof row !== "string") continue;
-    const line = row.replace(/\s+/g, " ").trim().slice(0, MAX_BULLET_LEN);
+    const line = row.replace(/\s+/g, " ").trim().slice(0, maxLen);
     if (!line) continue;
     out.push(line);
     if (out.length >= MAX_BULLETS) break;
@@ -193,6 +195,7 @@ function normalizeItem(
   raw: unknown,
   index: number,
   itemSource: ResumeItemSource,
+  bulletMaxLen: number = MAX_BULLET_LEN,
 ): ResumeSectionItem | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
@@ -204,7 +207,7 @@ function normalizeItem(
   const organization = cleanMetaField(row.organization, MAX_ORG);
   const location = cleanMetaField(row.location, MAX_LOCATION);
   const dateRange = cleanMetaField(row.dateRange, MAX_DATE_RANGE);
-  const bullets = normalizeBullets(row.bullets);
+  const bullets = normalizeBullets(row.bullets, bulletMaxLen);
 
   const structured = {
     ...(title ? { title } : {}),
@@ -217,6 +220,7 @@ function normalizeItem(
   const hasStructured = hasStructuredEntry(structured);
   if (hasStructured) {
     // 结构化为投递真源：覆盖 revised，避免与 bullets 双写漂移
+    // profile 已用更高 bullet 上限，此处重算 revised / 下方 revisedHtml fallback 同源
     revised = composeRevisedFromStructured(structured);
   }
 
@@ -281,14 +285,19 @@ function normalizeSection(
   const row = raw as Record<string, unknown>;
   if (!Array.isArray(row.items)) return null;
 
+  const type = normalizeSectionType(row.type);
+  const bulletMaxLen =
+    type === "profile" ? MAX_PROFILE_BULLET_LEN : MAX_BULLET_LEN;
+
   const items = row.items
-    .map((item, itemIndex) => normalizeItem(item, itemIndex, itemSource))
+    .map((item, itemIndex) =>
+      normalizeItem(item, itemIndex, itemSource, bulletMaxLen),
+    )
     .filter((item): item is ResumeSectionItem => Boolean(item))
     .map((item) => stampItemSource(item, itemSource, portfolioLabel));
 
   if (!items.length) return null;
 
-  const type = normalizeSectionType(row.type);
   const defaultTitle =
     type === "profile"
       ? "个人简介"
