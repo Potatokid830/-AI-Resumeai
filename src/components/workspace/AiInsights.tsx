@@ -1,8 +1,13 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { motion } from "framer-motion";
-import { MessageSquareQuote, WandSparkles } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  ChevronDown,
+  MessageSquareQuote,
+  PanelRightOpen,
+  WandSparkles,
+} from "lucide-react";
 
 type AiInsightsProps = {
   polishAdvice: string;
@@ -15,34 +20,68 @@ export default function AiInsights({
   polishAdvice,
   interviewDefense,
 }: AiInsightsProps) {
+  const [open, setOpen] = useState(false);
+
   return (
     <motion.aside
       initial={{ opacity: 0, x: 28 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.55, ease, delay: 0.55 }}
-      className="flex w-full flex-col gap-3 lg:max-w-[300px] lg:shrink-0"
+      className={`flex flex-col gap-3 ${
+        open
+          ? "w-full lg:w-[300px] lg:max-w-[300px] lg:shrink-0"
+          : "w-full lg:w-auto lg:max-w-none lg:shrink-0"
+      }`}
       aria-label="AI 洞察"
     >
-      <div className="mb-0.5 flex items-center gap-2 px-0.5">
-        <span className="text-[11px] font-medium tracking-[0.16em] text-zinc-500 uppercase">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 rounded-xl border border-white/[0.08] bg-zinc-950/55 px-3 py-2.5 text-left transition-colors hover:border-white/15 hover:bg-zinc-950/70 lg:w-auto"
+      >
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-zinc-300">
+          <PanelRightOpen className="h-3.5 w-3.5" strokeWidth={1.75} />
+        </span>
+        <span className="min-w-0 flex-1 text-[11px] font-medium tracking-[0.16em] text-zinc-400 uppercase lg:flex-none">
           AI Insights
         </span>
-        <span className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
-      </div>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform duration-300 ${
+            open ? "rotate-180" : ""
+          }`}
+          strokeWidth={1.75}
+          aria-hidden
+        />
+      </button>
 
-      <InsightCard
-        delay={0.68}
-        icon={<WandSparkles className="h-3.5 w-3.5" strokeWidth={1.75} />}
-        title="经历打磨建议"
-        body={polishAdvice}
-      />
-
-      <InsightCard
-        delay={0.82}
-        icon={<MessageSquareQuote className="h-3.5 w-3.5" strokeWidth={1.75} />}
-        title="面试防御话术"
-        body={interviewDefense}
-      />
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            key="insights-body"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.28, ease }}
+            className="flex flex-col gap-3 overflow-hidden"
+          >
+            <InsightCard
+              delay={0}
+              icon={<WandSparkles className="h-3.5 w-3.5" strokeWidth={1.75} />}
+              title="经历打磨建议"
+              body={polishAdvice}
+            />
+            <InsightCard
+              delay={0.08}
+              icon={
+                <MessageSquareQuote className="h-3.5 w-3.5" strokeWidth={1.75} />
+              }
+              title="面试防御话术"
+              body={interviewDefense}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </motion.aside>
   );
 }

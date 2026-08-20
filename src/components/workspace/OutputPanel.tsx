@@ -114,19 +114,26 @@ function ResumeItemBlock({ item }: { item: ResumeSectionItem }) {
       ) : null}
       <div>
         <p className="text-[11px] font-medium tracking-[0.12em] text-zinc-500 uppercase">
-          原文
-        </p>
-        <p className="mt-1.5 whitespace-pre-wrap text-[13.5px] leading-[1.55] text-zinc-600">
-          {item.original || "（无原文）"}
-        </p>
-      </div>
-      <div className="h-px bg-zinc-200/80" />
-      <div>
-        <p className="text-[11px] font-medium tracking-[0.12em] text-zinc-500 uppercase">
           改写
         </p>
         <RevisedBody item={item} />
       </div>
+      <details className="group border-t border-zinc-200/80 pt-3">
+        <summary className="cursor-pointer list-none text-[12.5px] font-medium text-zinc-500 transition-colors hover:text-zinc-700 [&::-webkit-details-marker]:hidden">
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className="inline-block text-[10px] text-zinc-400 transition-transform group-open:rotate-90"
+            >
+              ▸
+            </span>
+            查看原文
+          </span>
+        </summary>
+        <p className="mt-2 whitespace-pre-wrap text-[13.5px] leading-[1.55] text-zinc-600">
+          {item.original || "（无原文）"}
+        </p>
+      </details>
     </div>
   );
 }
@@ -898,7 +905,7 @@ function ResultState({
           </motion.div>
 
           <div
-            className={`no-export ${
+            className={`no-export shrink-0 self-stretch lg:self-start ${
               teaser
                 ? "pointer-events-none blur-md select-none opacity-60"
                 : ""
